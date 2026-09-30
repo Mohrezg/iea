@@ -1,1 +1,529 @@
+# -*- coding: utf-8 -*-
+"""ModeFair Home Assessment - Product‑Based Demands (Multiple Products)
+   Time‑based optimisation termination (user sets seconds)
+   Early stopping if no improvement for a given patience period.
+"""
 
+import numpy as np
+import pandas as pd
+import random
+import time
+
+# ----------------------------------------------------------------------
+# Helper: Pretty print a matrix with row/column labels
+# ----------------------------------------------------------------------
+def print_table(title, rows, headers, col_width=12):
+    """Print a formatted table with left-aligned headers and rows."""
+    print(f"\n{title}")
+    print("-" * (len(headers) * (col_width + 1) + 10))
+    # Header
+    header_line = f"{'':<{col_width}}"
+    for h in headers:
+        header_line += f"{h:<{col_width}}"
+    print(header_line)
+    # Separator
+    print("-" * (len(headers) * (col_width + 1) + 10))
+    # Rows
+    for row_name, row_values in rows:
+        line = f"{row_name:<{col_width}}"
+        for v in row_values:
+            if isinstance(v, float):
+                line += f"{v:>{col_width}.2f}"
+            else:
+                line += f"{v:>{col_width}}"
+        print(line)
+    print("-" * (len(headers) * (col_width + 1) + 10))
+
+# ----------------------------------------------------------------------
+# Load the precomputed distance matrix
+# ----------------------------------------------------------------------
+try:
+    dist_matrix_df = pd.read_csv('DistanceMatrix.csv', index_col=0)
+    dist_matrix = dist_matrix_df.values
+    print("Loaded distance matrix from 'DistanceMatrix.csv'")
+    n_points = dist_matrix.shape[0]
+except FileNotFoundError:
+    raise FileNotFoundError("DistanceMatrix.csv not found. Please provide a precomputed distance matrix.")
+
+# ----------------------------------------------------------------------
+# Load customer and vehicle data (no coordinates required)
+# ----------------------------------------------------------------------
+customers = pd.read_csv('Customer.csv', index_col='Customer')   # index is customer ID
+vehicles = pd.read_csv('Vehicle.csv', index_col='Vehicle')       # index is vehicle type
+# Sort vehicles by cost per km (cheapest first)
+vehicles = vehicles.sort_values('Cost (RM per km)', ascending=True)
+
+# Identify product columns (all columns except the index)
+product_columns = customers.columns.tolist()
+if len(product_columns) == 0:
+    raise ValueError("Customer.csv must contain at least one product column.")
+
+# Verify that vehicles have the same product columns
+missing_in_vehicles = [p for p in product_columns if p not in vehicles.columns]
+if missing_in_vehicles:
+    raise ValueError(f"Vehicle.csv is missing columns for products: {missing_in_vehicles}")
+
+# Convert to numpy arrays for fast access
+customer_demands = customers[product_columns].values      # shape: (n_customers, n_products)
+vehicle_capacities = vehicles[product_columns].values     # shape: (n_vehicles, n_products)
+
+n_customers = len(customers)
+n_vehicles = len(vehicles)
+n_products = len(product_columns)
+
+# ----------------------------------------------------------------------
+# Print Demand Matrix (Customer × Product)
+# ----------------------------------------------------------------------
+customer_rows = [(idx, row) for idx, row in zip(customers.index, customer_demands)]
+print_table("📊 DEMAND MATRIX (Customer × Product)",
+            customer_rows,
+            product_columns,
+            col_width=12)
+
+# ----------------------------------------------------------------------
+# Print Vehicle Capacities (Vehicle × Product) + Cost
+# ----------------------------------------------------------------------
+vehicle_rows = []
+for idx, row in vehicles.iterrows():
+    # row includes product columns plus 'Cost (RM per km)'
+    cap_vals = row[product_columns].values
+    cost = row['Cost (RM per km)']
+    # we'll show capacities and cost in a separate column
+    vehicle_rows.append((idx, list(cap_vals) + [cost]))
+vehicle_headers = product_columns + ['Cost (RM/km)']
+print_table("🚛 VEHICLE CAPACITIES",
+            vehicle_rows,
+            vehicle_headers,
+            col_width=12)
+
+# ----------------------------------------------------------------------
+# Print Distance Matrix (truncated if >10x10)
+# ----------------------------------------------------------------------
+print("\n📏 DISTANCE MATRIX (depot index 0)")
+print("-" * 60)
+n_show = min(len(dist_matrix), 10)
+headers = [str(i) for i in range(n_show)]
+rows = []
+for i in range(n_show):
+    row_vals = list(dist_matrix[i][:n_show])
+    rows.append((str(i), row_vals))
+print_table("", rows, headers, col_width=10)
+if len(dist_matrix) > 10:
+    print(f"... and {len(dist_matrix) - 10} more rows/columns.")
+print("-" * 60)
+
+print(f"\n✅ Loaded {n_customers} customers, {n_vehicles} vehicles, {n_products} products.")
+print(f"Distance matrix size: {len(dist_matrix)}×{len(dist_matrix)}")
+
+# ----------------------------------------------------------------------
+# Functions used by both Algorithms (modified for product capacities)
+# ----------------------------------------------------------------------
+def create_initial_solution():
+    """Return a random permutation of customer indices (1‑based)."""
+    return random.sample(range(1, n_customers + 1), n_customers)
+
+def evaluate(solution):
+    """
+    Evaluate a solution (permutation of customer indices).
+    Returns (total_distance, total_cost) respecting product capacities.
+    """
+    total_distance = 0
+    total_cost = 0
+    route = []                  # list of customer indices in current route
+    route_quantities = np.zeros(n_products)   # accumulated product quantities
+    vehicle_index = 0
+
+    # We'll store each complete route as (route_list, vehicle_idx, quantities_vector)
+    routes = []
+
+    for cust_idx in solution:
+        # customer index is 1‑based, convert to 0‑based for array access
+        demand = customer_demands[cust_idx - 1]
+        # Check if we can add this customer to the current vehicle
+        if np.all(route_quantities + demand <= vehicle_capacities[vehicle_index]):
+            route.append(cust_idx)
+            route_quantities += demand
+        else:
+            # Close current route and start a new one with the next vehicle
+            routes.append((route, vehicle_index, route_quantities.copy()))
+            route = [cust_idx]
+            route_quantities = demand.copy()
+            vehicle_index = (vehicle_index + 1) % n_vehicles
+
+    if route:
+        routes.append((route, vehicle_index, route_quantities.copy()))
+
+    # Compute distance and cost for each route
+    for route, v_idx, quantities in routes:
+        # Distance from depot to first customer
+        route_distance = dist_matrix[0][route[0]]
+        # Between customers
+        for i in range(len(route) - 1):
+            route_distance += dist_matrix[route[i]][route[i + 1]]
+        # Return to depot
+        route_distance += dist_matrix[route[-1]][0]
+
+        total_distance += route_distance
+        total_cost += route_distance * vehicles.iloc[v_idx]['Cost (RM per km)']
+
+    return total_distance, total_cost
+
+def print_solution(best_solution, customers, vehicles, dist_matrix):
+    """Print detailed solution with product quantities per route."""
+    total_distance = 0
+    total_cost = 0
+    route = []
+    route_quantities = np.zeros(n_products)
+    vehicle_index = 0
+    routes = []
+    route_num = 1
+
+    for cust_idx in best_solution:
+        demand = customer_demands[cust_idx - 1]
+        if np.all(route_quantities + demand <= vehicle_capacities[vehicle_index]):
+            route.append(cust_idx)
+            route_quantities += demand
+        else:
+            routes.append((route, vehicle_index, route_quantities.copy()))
+            route = [cust_idx]
+            route_quantities = demand.copy()
+            vehicle_index = (vehicle_index + 1) % n_vehicles
+
+    if route:
+        routes.append((route, vehicle_index, route_quantities.copy()))
+
+    for route, v_idx, quantities in routes:
+        # Build route details string
+        route_distance = dist_matrix[0][route[0]]
+        details = f"Depot -> C{route[0]} ({route_distance:.3f} km)"
+        for i in range(len(route) - 1):
+            seg = dist_matrix[route[i]][route[i + 1]]
+            route_distance += seg
+            details += f" -> C{route[i + 1]} ({seg:.3f} km)"
+        ret = dist_matrix[route[-1]][0]
+        route_distance += ret
+        details += f" -> Depot ({ret:.3f} km)"
+
+        route_cost = route_distance * vehicles.iloc[v_idx]['Cost (RM per km)']
+        total_distance += route_distance
+        total_cost += route_cost
+
+        # Build product quantity string
+        prod_str = ", ".join([f"{p}: {q:.2f}" for p, q in zip(product_columns, quantities)])
+
+        print(f"Vehicle {route_num} ({vehicles.index[v_idx]}):")
+        print(f"  Round Trip Distance: {route_distance:.3f} km, Cost: RM {route_cost:.2f}")
+        print(f"  Product quantities: {prod_str}")
+        print(f"  Route: {details}\n")
+        route_num += 1
+
+    print(f"Total Distance = {total_distance:.3f} km")
+    print(f"Total Cost = RM {total_cost:.2f}\n")
+
+# --- Genetic Algorithm (time‑based termination + early stop) ---
+def select(population, fitnesses, k=3):
+    selected = []
+    for _ in range(len(population)):
+        tournament = random.sample(list(zip(population, fitnesses)), k)
+        selected.append(min(tournament, key=lambda x: x[1])[0])
+    return selected
+
+def crossover(parent1, parent2):
+    size = len(parent1)
+    cxpoint1, cxpoint2 = sorted(random.sample(range(size), 2))
+    child1 = [None] * size
+    child2 = [None] * size
+    child1[cxpoint1:cxpoint2] = parent1[cxpoint1:cxpoint2]
+    child2[cxpoint1:cxpoint2] = parent2[cxpoint1:cxpoint2]
+    fill_child(child1, parent2, cxpoint2, size)
+    fill_child(child2, parent1, cxpoint2, size)
+    return child1, child2
+
+def fill_child(child, parent, start, size):
+    pos = start
+    for i in range(size):
+        if parent[i] not in child:
+            while child[pos] is not None:
+                pos = (pos + 1) % size
+            child[pos] = parent[i]
+
+def mutate(solution, mutpb):
+    for i in range(len(solution)):
+        if random.random() < mutpb:
+            j = random.randint(0, len(solution) - 1)
+            solution[i], solution[j] = solution[j], solution[i]
+
+def genetic_algorithm(customers, vehicles, population_size, generations, cxpb, mutpb, time_limit=None, patience_seconds=5.0):
+    """
+    Run GA. If time_limit (seconds) is given, stop after that time.
+    If patience_seconds is given and no improvement for that duration, stop early.
+    """
+    print(f"\n🧬 Running Genetic Algorithm (pop={population_size}, cx={cxpb}, mut={mutpb})")
+    if time_limit is not None:
+        print(f"   Time limit = {time_limit:.1f} seconds")
+    else:
+        print(f"   Generations = {generations}")
+    print(f"   Early‑stop patience = {patience_seconds:.1f} seconds")
+
+    population = [create_initial_solution() for _ in range(population_size)]
+    fitnesses = [evaluate(indv) for indv in population]
+    best_solution = population[0]
+    best_distance, best_cost = fitnesses[0]
+    # find initial best
+    for sol, (dist, cost) in zip(population, fitnesses):
+        if cost < best_cost:
+            best_solution, best_distance, best_cost = sol, dist, cost
+    print(f"  Initial best: distance={best_distance:.2f} km, cost=RM {best_cost:.2f}")
+
+    start_time = time.time()
+    last_improvement_time = start_time   # track last time best improved
+    gen = 0
+    # Run until generation limit or time limit or patience expiry
+    while gen < generations:
+        # Check time limit
+        if time_limit is not None and (time.time() - start_time) >= time_limit:
+            break
+
+        # Selection
+        selected = select(population, fitnesses)
+        next_population = []
+        for i in range(0, len(selected), 2):
+            if i + 1 < len(selected) and random.random() < cxpb:
+                child1, child2 = crossover(selected[i], selected[i + 1])
+            else:
+                child1, child2 = selected[i], selected[i + 1] if i + 1 < len(selected) else selected[i]
+            next_population.append(child1)
+            next_population.append(child2)
+        for indv in next_population:
+            mutate(indv, mutpb)
+
+        population = next_population
+        fitnesses = [evaluate(indv) for indv in population]
+
+        # Update best and record improvement time
+        improved = False
+        for sol, (dist, cost) in zip(population, fitnesses):
+            if cost < best_cost:
+                best_solution, best_distance, best_cost = sol, dist, cost
+                last_improvement_time = time.time()   # update improvement timestamp
+                improved = True
+
+        gen += 1
+
+        # Early stop check: no improvement for 'patience_seconds'
+        if time.time() - last_improvement_time >= patience_seconds:
+            print(f"  Early stopping: no improvement for {patience_seconds:.1f} seconds.")
+            break
+
+        # Print progress every 10 generations or at end
+        if gen % 10 == 0 or gen == generations or (time_limit is not None and (time.time() - start_time) >= time_limit):
+            elapsed = time.time() - start_time
+            print(f"  Gen {gen:3d} (elapsed {elapsed:.1f}s): best distance={best_distance:.2f} km, cost=RM {best_cost:.2f}")
+
+    # Return best found
+    return best_solution, (best_distance, best_cost)
+
+# --- Hyperparameter tuning for GA (iteration‑based) ---
+population_size_list = [50, 100, 150]
+generations_list = [50, 100, 150]
+cxpb_list = [0.6, 0.7, 0.8]
+mutpb_list = [0.1, 0.2, 0.3]
+
+def hyperparameter_tuning_ga(customers, vehicles, population_size_list, generations_list, cxpb_list, mutpb_list):
+    print("\n🔍 GA Hyperparameter Tuning")
+    best_hyperparams = None
+    best_solution = None
+    best_distance = float('inf')
+    best_cost = float('inf')
+    for population_size in population_size_list:
+        for generations in generations_list:
+            for cxpb in cxpb_list:
+                for mutpb in mutpb_list:
+                    solution, (distance, cost) = genetic_algorithm(customers, vehicles, population_size, generations, cxpb, mutpb)
+                    if cost < best_cost:
+                        best_hyperparams = (population_size, generations, cxpb, mutpb)
+                        best_solution = solution
+                        best_distance = distance
+                        best_cost = cost
+                    print(f"    -> Total Distance: {distance:.3f} km, Total Cost: RM {cost:.2f}")
+    return best_hyperparams, best_solution, best_distance, best_cost
+
+# --- Variable Neighbourhood Search (time‑based + early stop) ---
+def local_search(solution):
+    best_solution = solution.copy()
+    best_distance, best_cost = evaluate(best_solution)
+    for i in range(len(solution)):
+        for j in range(i + 1, len(solution)):
+            new_solution = solution.copy()
+            new_solution[i], new_solution[j] = new_solution[j], new_solution[i]
+            new_distance, new_cost = evaluate(new_solution)
+            if new_cost < best_cost:
+                best_solution, best_distance, best_cost = new_solution, new_distance, new_cost
+    return best_solution, best_distance, best_cost
+
+def shake(solution, k):
+    new_solution = solution.copy()
+    for _ in range(k):
+        i, j = random.sample(range(len(solution)), 2)
+        new_solution[i], new_solution[j] = new_solution[j], new_solution[i]
+    return new_solution
+
+def variable_neighbourhood_search(customers, vehicles, max_iterations, k_max, time_limit=None, patience_seconds=5.0):
+    """
+    Run VNS. If time_limit (seconds) is given, stop after that time.
+    If patience_seconds is given and no improvement for that duration, stop early.
+    """
+    print(f"\n🔄 Running VNS (k_max={k_max})")
+    if time_limit is not None:
+        print(f"   Time limit = {time_limit:.1f} seconds")
+    else:
+        print(f"   Max iterations = {max_iterations}")
+    print(f"   Early‑stop patience = {patience_seconds:.1f} seconds")
+
+    best_solution = create_initial_solution()
+    best_distance, best_cost = evaluate(best_solution)
+    print(f"  Initial best: distance={best_distance:.2f} km, cost=RM {best_cost:.2f}")
+
+    start_time = time.time()
+    last_improvement_time = start_time
+    iteration = 0
+    while iteration < max_iterations:
+        # Check time limit
+        if time_limit is not None and (time.time() - start_time) >= time_limit:
+            break
+
+        k = 1
+        improved = False
+        while k <= k_max:
+            new_solution = shake(best_solution, k)
+            new_solution, new_distance, new_cost = local_search(new_solution)
+            if new_cost < best_cost:
+                best_solution, best_distance, best_cost = new_solution, new_distance, new_cost
+                last_improvement_time = time.time()   # update improvement timestamp
+                elapsed = time.time() - start_time
+                print(f"  Iter {iteration+1:3d}, k={k} (elapsed {elapsed:.1f}s): improved -> distance={best_distance:.2f} km, cost=RM {best_cost:.2f}")
+                improved = True
+                k = 1
+            else:
+                k += 1
+        iteration += 1
+
+        # Early stop check: no improvement for 'patience_seconds'
+        if time.time() - last_improvement_time >= patience_seconds:
+            print(f"  Early stopping: no improvement for {patience_seconds:.1f} seconds.")
+            break
+
+        # Print progress every 5 iterations or at time limit
+        if iteration % 5 == 0 or (time_limit is not None and (time.time() - start_time) >= time_limit):
+            elapsed = time.time() - start_time
+            print(f"  Iter {iteration:3d} (elapsed {elapsed:.1f}s): best distance={best_distance:.2f} km, cost=RM {best_cost:.2f}")
+
+    return best_solution, best_distance, best_cost
+
+# --- Hyperparameter tuning for VNS (iteration‑based) ---
+max_iterations_list = [50, 100, 150]
+k_max_list = [3, 5, 7]
+
+def hyperparameter_tuning_vns(customers, vehicles, max_iterations_list, k_max_list):
+    print("\n🔍 VNS Hyperparameter Tuning")
+    best_hyperparams = None
+    best_solution = None
+    best_distance = float('inf')
+    best_cost = float('inf')
+    for max_iterations in max_iterations_list:
+        for k_max in k_max_list:
+            solution, distance, cost = variable_neighbourhood_search(customers, vehicles, max_iterations, k_max)
+            if cost < best_cost:
+                best_hyperparams = (max_iterations, k_max)
+                best_solution = solution
+                best_distance = distance
+                best_cost = cost
+            print(f"    -> Total Distance: {distance:.3f} km, Total Cost: RM {cost:.2f}")
+    return best_hyperparams, best_solution, best_distance, best_cost
+
+# ----------------------------------------------------------------------
+# MAIN EXECUTION
+# ----------------------------------------------------------------------
+print("\n" + "="*60)
+print("🚀 Starting GA hyperparameter tuning...")
+best_hyperparams_ga, best_solution_ga, best_distance_ga, best_cost_ga = hyperparameter_tuning_ga(
+    customers, vehicles,
+    population_size_list,
+    generations_list,
+    cxpb_list,
+    mutpb_list
+)
+print(f"\n🏆 Best GA Hyperparameters: population_size={best_hyperparams_ga[0]}, generations={best_hyperparams_ga[1]}, cxpb={best_hyperparams_ga[2]}, mutpb={best_hyperparams_ga[3]}")
+print(f"   Best distance={best_distance_ga:.3f} km, cost=RM {best_cost_ga:.2f}")
+
+print("\n" + "="*60)
+print("🚀 Starting VNS hyperparameter tuning...")
+best_hyperparams_vns, best_solution_vns, best_distance_vns, best_cost_vns = hyperparameter_tuning_vns(
+    customers, vehicles,
+    max_iterations_list,
+    k_max_list
+)
+print(f"\n🏆 Best VNS Hyperparameters: max_iterations={best_hyperparams_vns[0]}, k_max={best_hyperparams_vns[1]}")
+print(f"   Best distance={best_distance_vns:.3f} km, cost=RM {best_cost_vns:.2f}")
+
+# ----------------------------------------------------------------------
+# USER INPUT: time limit for final optimisation runs
+# ----------------------------------------------------------------------
+try:
+    time_limit = float(input("\n⏱️  Enter time limit in seconds for the final run (e.g., 60): ") or 60.0)
+except ValueError:
+    time_limit = 60.0
+    print(f"Using default time limit of {time_limit} seconds.")
+
+# ----------------------------------------------------------------------
+# Run GA again with the best hyperparameters, time‑limited + early stop
+# ----------------------------------------------------------------------
+print("\n" + "="*60)
+print("🚀 Running GA with best parameters, time limit and early stop (patience=5s)...")
+best_ga_pop, best_ga_gen, best_ga_cx, best_ga_mut = best_hyperparams_ga
+# Set generations to a very large number so that time limit / patience determine stop
+GA_GENERATIONS_LARGE = 100000
+ga_solution, (ga_dist, ga_cost) = genetic_algorithm(
+    customers, vehicles,
+    population_size=best_ga_pop,
+    generations=GA_GENERATIONS_LARGE,
+    cxpb=best_ga_cx,
+    mutpb=best_ga_mut,
+    time_limit=time_limit,
+    patience_seconds=5.0
+)
+print(f"\n🏆 GA final result (time‑limited + early stop): distance={ga_dist:.3f} km, cost=RM {ga_cost:.2f}")
+print("GA Solution:")
+print_solution(ga_solution, customers, vehicles, dist_matrix)
+
+# ----------------------------------------------------------------------
+# Run VNS again with the best hyperparameters, time‑limited + early stop
+# ----------------------------------------------------------------------
+print("\n" + "="*60)
+print("🚀 Running VNS with best parameters, time limit and early stop (patience=5s)...")
+best_vns_iter, best_vns_k = best_hyperparams_vns
+VNS_MAX_ITER_LARGE = 100000
+vns_solution, vns_dist, vns_cost = variable_neighbourhood_search(
+    customers, vehicles,
+    max_iterations=VNS_MAX_ITER_LARGE,
+    k_max=best_vns_k,
+    time_limit=time_limit,
+    patience_seconds=5.0
+)
+print(f"\n🏆 VNS final result (time‑limited + early stop): distance={vns_dist:.3f} km, cost=RM {vns_cost:.2f}")
+print("VNS Solution:")
+print_solution(vns_solution, customers, vehicles, dist_matrix)
+
+# ----------------------------------------------------------------------
+# Compare both algorithms
+# ----------------------------------------------------------------------
+print("\n" + "="*60)
+print("📊 COMPARISON OF FINAL RESULTS")
+print(f"GA  : Distance = {ga_dist:.3f} km, Cost = RM {ga_cost:.2f}")
+print(f"VNS : Distance = {vns_dist:.3f} km, Cost = RM {vns_cost:.2f}")
+if ga_cost < vns_cost:
+    print("✅ GA found a cheaper solution.")
+elif vns_cost < ga_cost:
+    print("✅ VNS found a cheaper solution.")
+else:
+    print("⚖️  Both algorithms found solutions with the same cost.")
