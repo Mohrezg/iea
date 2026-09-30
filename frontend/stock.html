@@ -1,0 +1,1559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IEA · Stock Management</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+    <style>
+        /* ── Reset & Root ── */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #fdf8f0;
+            --surface: #ffffff;
+            --surface2: #f7f2e9;
+            --border: #e8ddd0;
+            --text: #1e1a16;
+            --text-dim: #7a6e5e;
+            --text-muted: #b0a292;
+            --accent: #ffcc00;
+            --accent-dim: #e6b800;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+            --radius: 14px;
+            --font: 'Inter', -apple-system, sans-serif;
+            --header-height: 68px;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #dc2626;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            min-height: 100vh;
+            padding: 0 20px 40px;
+            padding-top: calc(var(--header-height) + 20px);
+        }
+        a { color: inherit; text-decoration: none; }
+        button { font-family: inherit; cursor: pointer; border: none; outline: none; }
+        input, select, textarea { font-family: inherit; outline: none; border: none; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--surface); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+        .app { max-width: 1400px; margin: 0 auto; }
+
+        /* ── Header ── */
+        .header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0 20px;
+            height: var(--header-height);
+            display: flex; align-items: center; justify-content: space-between;
+            box-shadow: var(--shadow);
+        }
+        .header-left { display: flex; align-items: center; gap: 14px; }
+        .header-center {
+            font-weight: 700; font-size: 18px; letter-spacing: -0.02em;
+            color: var(--text);
+            position: absolute; left: 50%; transform: translateX(-50%);
+            white-space: nowrap;
+        }
+        .header-center span { font-weight: 400; color: var(--text-dim); font-size: 14px; }
+        .header-status {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 13px; color: var(--text-dim);
+            background: var(--bg); padding: 6px 16px 6px 12px;
+            border-radius: 100px; border: 1px solid var(--border);
+        }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--success);
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        .status-dot.busy { background: var(--warning); }
+        @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        .hamburger {
+            width: 40px; height: 40px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 5px; background: transparent; border-radius: 8px;
+            transition: background 0.2s; padding: 0;
+            position: relative; z-index: 1001;
+        }
+        .hamburger:hover { background: var(--surface2); }
+        .hamburger span {
+            display: block; width: 22px; height: 2.5px;
+            background: var(--text); border-radius: 4px;
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+            transform-origin: center;
+        }
+        .hamburger.active span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
+        .hamburger.active span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+        .hamburger.active span:nth-child(3) { transform: rotate(-45deg) translate(5px, -5px); }
+
+        .nav-overlay {
+            position: fixed; inset: 0; background: rgba(0, 0, 0, 0.3);
+            z-index: 999; opacity: 0; pointer-events: none;
+            transition: opacity 0.35s ease;
+        }
+        .nav-overlay.open { opacity: 1; pointer-events: auto; }
+        .nav-panel {
+            position: fixed; top: 0; left: 0; bottom: 0;
+            width: 300px; max-width: 80vw;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            box-shadow: 4px 0 32px rgba(0, 0, 0, 0.1);
+            z-index: 1000; transform: translateX(-110%);
+            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+            padding: 24px 20px; overflow-y: auto;
+            display: flex; flex-direction: column;
+        }
+        .nav-panel.open { transform: translateX(0); }
+        .nav-panel .nav-brand {
+            font-weight: 800; font-size: 20px; letter-spacing: -0.03em;
+            padding-bottom: 20px; border-bottom: 1px solid var(--border);
+            margin-bottom: 24px; color: var(--text);
+        }
+        .nav-panel .nav-brand span { color: var(--accent-dim); }
+        .nav-panel .nav-close {
+            position: absolute; top: 16px; right: 16px;
+            background: none; font-size: 24px; color: var(--text-dim);
+            padding: 4px 8px; border-radius: 6px;
+            transition: background 0.2s;
+        }
+        .nav-panel .nav-close:hover { background: var(--surface2); }
+        .nav-panel .nav-links { list-style: none; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+        .nav-panel .nav-links li a {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 16px; border-radius: 10px;
+            font-weight: 500; font-size: 15px;
+            color: var(--text-dim); transition: all 0.2s;
+        }
+        .nav-panel .nav-links li a:hover { background: var(--accent); color: var(--text); }
+        .nav-panel .nav-links li a .icon { font-size: 18px; width: 28px; text-align: center; }
+        .nav-panel .nav-links li a.active { background: var(--accent); color: var(--text); }
+        .nav-panel .nav-footer {
+            border-top: 1px solid var(--border);
+            padding-top: 16px; margin-top: 8px;
+            font-size: 12px; color: var(--text-muted);
+        }
+
+        /* ── Cards & Layout ── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+        }
+        .card-title {
+            font-size: 14px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+        .card-title .badge {
+            font-size: 10px; background: var(--accent); color: #1e1a16;
+            padding: 2px 12px; border-radius: 100px; font-weight: 700;
+            text-transform: none;
+        }
+        .card-title .data-source {
+            font-size: 11px; color: var(--text-muted);
+            font-weight: 400; text-transform: none;
+            margin-left: auto;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+        .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
+        @media (max-width: 820px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 24px; border-radius: 8px;
+            font-weight: 600; font-size: 14px;
+            transition: all 0.2s;
+            background: var(--surface2); color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--text); }
+        .btn-primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+        .btn-success { background: var(--success); border-color: var(--success); color: #fff; }
+        .btn-success:hover { background: #16a34a; border-color: #16a34a; }
+        .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+        .btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }
+        .btn-sm { padding: 6px 14px; font-size: 12px; }
+        .btn-block { width: 100%; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+
+        /* ── Forms ── */
+        .form-group { margin-bottom: 14px; }
+        .form-group label {
+            display: block; font-weight: 500; font-size: 13px;
+            color: var(--text-dim); margin-bottom: 4px;
+        }
+        .form-group input, .form-group select {
+            width: 100%; padding: 10px 14px;
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 8px; font-size: 14px; color: var(--text);
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(255, 204, 0, 0.15);
+        }
+        .form-row { display: flex; gap: 14px; flex-wrap: wrap; }
+        .form-row .form-group { flex: 1; min-width: 120px; }
+
+        /* ── Stats ── */
+        .stat-box {
+            background: var(--bg);
+            border-radius: 10px; padding: 16px 20px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+        .stat-box .stat-value {
+            font-size: 28px; font-weight: 800;
+            letter-spacing: -0.02em; color: var(--text);
+        }
+        .stat-box .stat-value.small { font-size: 15px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+        .stat-box .stat-label {
+            font-size: 12px; color: var(--text-dim);
+            font-weight: 500; text-transform: uppercase;
+            letter-spacing: 0.04em; margin-top: 2px;
+        }
+        .stat-box .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+        /* ── Tables ── */
+        .table-responsive { overflow-x: auto; margin-top: 4px; }
+        .table-responsive table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .table-responsive th {
+            text-align: left; padding: 6px 10px;
+            color: var(--text-dim); font-weight: 600; font-size: 11px;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+            position: sticky; top: 0; z-index: 2;
+        }
+        .table-responsive td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+        .table-responsive tr:last-child td { border-bottom: none; }
+        .table-responsive tbody tr:hover { background: rgba(255, 204, 0, 0.05); }
+        .table-responsive .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .table-responsive .mono {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 12px;
+        }
+        .table-responsive tbody tr.clickable { cursor: pointer; }
+
+        /* ── Empty / Loading ── */
+        .empty-state { text-align: center; padding: 32px 16px; color: var(--text-muted); }
+        .empty-state .icon { font-size: 40px; display: block; margin-bottom: 8px; }
+        .empty-state p { font-size: 14px; }
+        .loading-spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2.5px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* =========================================================
+           PRODUCT TAB STRIP
+           ========================================================= */
+        .tab-strip {
+            display: flex; gap: 6px;
+            overflow-x: auto; overflow-y: hidden;
+            padding-bottom: 10px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid var(--border);
+            scrollbar-width: thin;
+        }
+        .tab-strip::-webkit-scrollbar { height: 5px; }
+        .tab-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+        .ptab {
+            flex: 0 0 auto;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            font-size: 12.5px; font-weight: 600;
+            color: var(--text-dim);
+            white-space: nowrap;
+            max-width: 190px;
+            overflow: hidden; text-overflow: ellipsis;
+            transition: all 0.18s;
+        }
+        .ptab:hover { color: var(--text); border-color: var(--accent); }
+        .ptab.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--text);
+            box-shadow: 0 2px 8px rgba(255, 204, 0, 0.35);
+        }
+        .ptab.dash { background: var(--text); color: #fff; border-color: var(--text); }
+        .ptab.dash:hover { background: #3a332b; }
+        .ptab.dash.active { background: var(--accent); color: var(--text); border-color: var(--accent); }
+
+        /* =========================================================
+           UNIFIED DESIGN — shared with forecast / vrp / fjsp
+           ========================================================= */
+
+        /* Compact drop zone */
+        .drop-zone {
+            border: 1.5px dashed var(--border);
+            border-radius: 10px;
+            padding: 10px 14px;
+            transition: all 0.2s;
+            background: var(--bg);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-align: left;
+        }
+        .drop-zone:hover { border-color: var(--accent); background: rgba(255, 204, 0, 0.04); }
+        .drop-zone.dragover { border-color: var(--accent); background: rgba(255, 204, 0, 0.08); }
+        .drop-zone .icon { font-size: 20px; line-height: 1; }
+        .drop-zone p {
+            font-size: 13px; font-weight: 500;
+            color: var(--text); line-height: 1.25;
+        }
+        .drop-zone .hint {
+            display: block;
+            font-size: 10.5px; color: var(--text-muted);
+            margin-top: 2px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .drop-zone u { text-decoration-color: var(--accent-dim); text-underline-offset: 2px; }
+
+        /* File info pill */
+        .file-info {
+            margin-top: 10px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            font-size: 12px;
+            display: flex; align-items: center; gap: 8px;
+            justify-content: space-between; flex-wrap: wrap;
+        }
+        .file-info .badge-detected {
+            background: var(--success); color: white;
+            padding: 3px 12px; border-radius: 100px;
+            font-size: 11px; font-weight: 700;
+        }
+
+        /* Manual product card */
+        .product-card {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin-bottom: 12px;
+            background: var(--bg);
+            position: relative;
+        }
+        .product-card .remove {
+            position: absolute; top: 10px; right: 10px;
+            background: transparent; border: none; color: var(--text-muted);
+            cursor: pointer; font-size: 14px; padding: 4px 8px;
+            border-radius: 6px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .product-card .remove:hover { background: rgba(220, 38, 38, 0.10); color: var(--danger); }
+        .product-card h4 {
+            margin: 0 0 10px; font-size: 11px; color: var(--text-dim);
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+
+        /* Database product list */
+        .db-list {
+            max-height: 360px; overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg);
+        }
+        .db-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .db-item:last-child { border-bottom: none; }
+        .db-item:hover { background: rgba(255, 204, 0, 0.06); }
+        .db-item input[type="checkbox"] {
+            accent-color: var(--accent);
+            width: 16px; height: 16px; cursor: pointer;
+        }
+        .db-item .db-name { font-weight: 600; font-size: 13px; }
+        .db-item .db-meta {
+            font-size: 11px; color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .db-item.selected { background: rgba(255, 204, 0, 0.10); }
+
+        /* Alerts */
+        .alert {
+            padding: 12px 16px; border-radius: 8px; font-size: 13px;
+            margin-bottom: 14px; display: flex; gap: 8px; align-items: flex-start;
+            white-space: pre-line;
+        }
+        .alert-error { background: rgba(220, 38, 38, 0.08); border-left: 3px solid var(--danger); color: #991b1b; }
+        .alert-warn { background: rgba(245, 158, 11, 0.08); border-left: 3px solid var(--warning); color: #92400e; }
+        .alert-info { background: rgba(255, 204, 0, 0.10); border-left: 3px solid var(--accent); color: var(--text); }
+        .alert-success { background: rgba(34, 197, 94, 0.10); border-left: 3px solid var(--success); color: #166534; }
+
+        /* Results action bar */
+        .results-action-bar {
+            display: flex; align-items: center;
+            justify-content: space-between; flex-wrap: wrap;
+            gap: 12px;
+            background: var(--surface2);
+            border-radius: 10px;
+            padding: 12px 18px;
+            border: 1px solid var(--border);
+            margin-bottom: 16px;
+        }
+        .results-action-bar .left,
+        .results-action-bar .right {
+            display: flex; align-items: center; gap: 12px;
+        }
+        .results-action-bar .run-status-sm {
+            font-size: 13px; color: var(--text-dim);
+        }
+        .results-action-bar .run-status-sm.busy { color: var(--warning); }
+        .results-action-bar .run-status-sm.done { color: var(--success); }
+
+        /* Data note */
+        .data-note {
+            font-size: 12px; color: var(--text-muted);
+            background: var(--surface2);
+            padding: 6px 14px; border-radius: 6px;
+            margin-top: 6px; border-left: 3px solid var(--accent);
+        }
+
+        /* ABC/XYZ badges */
+        .badge-cls {
+            display: inline-block; padding: 2px 10px; border-radius: 100px;
+            font-size: 11px; font-weight: 700; color: white;
+            min-width: 22px; text-align: center;
+        }
+        .badge-A { background: #dc2626; }
+        .badge-B { background: #f59e0b; }
+        .badge-C { background: #64748b; }
+        .badge-X { background: #16a34a; }
+        .badge-Y { background: #0891b2; }
+        .badge-Z { background: #7c3aed; }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 30px; right: 30px;
+            background: var(--text); color: #fff;
+            padding: 14px 24px; border-radius: 10px;
+            font-weight: 500; font-size: 14px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            z-index: 2000;
+            transform: translateY(120px); opacity: 0;
+            transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+            max-width: 420px;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.success { background: var(--success); color: #fff; }
+        .toast.error { background: var(--danger); color: #fff; }
+        .toast.warning { background: var(--warning); color: #fff; }
+
+        /* Misc */
+        .mt-8 { margin-top: 8px; }
+        .mt-16 { margin-top: 16px; }
+        .mt-24 { margin-top: 24px; }
+        .flex { display: flex; }
+        .flex-center { display: flex; align-items: center; gap: 12px; }
+        .text-muted { color: var(--text-muted); font-size: 12px; }
+        .text-center { text-align: center; }
+        .label-hint { font-weight: 400; color: var(--text-muted); }
+        .hidden { display: none !important; }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            body { padding: 0 12px 24px; padding-top: calc(var(--header-height) + 16px); }
+            .header-center { font-size: 14px; position: static; transform: none; flex: 1; text-align: center; }
+            .header-center span { display: none; }
+            .header-status { font-size: 11px; padding: 4px 10px; }
+            .card { padding: 14px 16px; }
+            .stat-box .stat-value { font-size: 22px; }
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; gap: 12px; }
+            .form-row { flex-direction: column; }
+            .ptab { max-width: 140px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ─── HEADER ─── -->
+    <header class="header">
+        <div class="header-left">
+            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+        <div class="header-center">
+            Industrial Engineering Assistance <span>· Stock Management</span>
+        </div>
+        <div class="header-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Ready</span>
+        </div>
+    </header>
+
+    <!-- ─── SIDE NAV ─── -->
+    <div class="nav-overlay" id="navOverlay"></div>
+    <nav class="nav-panel" id="navPanel" role="navigation" aria-label="Main navigation">
+        <button class="nav-close" id="navClose" aria-label="Close menu">✕</button>
+        <div class="nav-brand">⚙️ <span>IEA</span> Suite</div>
+        <ul class="nav-links">
+            <li><a href="/"><span class="icon">🏠</span> Home</a></li>
+            <li><a href="/forecast"><span class="icon">📊</span> Forecast</a></li>
+            <li><a href="/stock" class="active"><span class="icon">📦</span> Stock Management</a></li>
+            <li><a href="/vrp"><span class="icon">🚚</span> Vehicle Routing</a></li>
+            <li><a href="/scheduling"><span class="icon">🏭</span> Production Scheduling</a></li>
+        </ul>
+        <div class="nav-footer">ABC · XYZ · Safety Stock · EOQ</div>
+    </nav>
+
+    <!-- ─── TOAST ─── -->
+    <div id="toast" class="toast"></div>
+
+    <!-- ─── MAIN ─── -->
+    <div class="app">
+
+        <div class="card-title">
+            📦 Inventory Management
+            <span class="badge">ABC · XYZ · EOQ</span>
+            <span class="data-source">Products &amp; demand loaded from the database</span>
+        </div>
+
+        <!-- ═══════════ PRODUCT TABS (Dashboard + one per product) ═══════════ -->
+        <div class="card">
+            <div class="card-title" style="font-size:12px;">
+                🗄️ Product Data
+                <span class="badge" id="db-status-badge">Loading…</span>
+                <span class="data-source">
+                    <button class="btn btn-sm" onclick="reloadProducts()">↻ Reload from DB</button>
+                </span>
+            </div>
+
+            <div class="tab-strip" id="tab-strip"></div>
+            <div id="input-body"></div>
+        </div>
+
+        <!-- ═══════════ SETTINGS ═══════════ -->
+        <div class="card">
+            <div class="card-title" style="font-size:12px;">
+                ⚙️ Settings
+            </div>
+
+            <div class="grid-4">
+                <!-- Demand frequency -->
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="demand-period">Demand Frequency</label>
+                    <select id="demand-period">
+                        <option value="daily">Daily</option>
+                        <option value="weekly" selected>Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                    </select>
+                </div>
+
+                <!-- Service level -->
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="service-level">Service Level</label>
+                    <select id="service-level" onchange="toggleCustomZ()">
+                        {% for sl in service_levels %}
+                        <option value="{{ sl.value }}" {% if sl.value == 95.0 %}selected{% endif %}>
+                            {{ sl.value }}%  (Z = {{ sl.z }})
+                        </option>
+                        {% endfor %}
+                        <option value="custom">Custom Z value</option>
+                    </select>
+                    <input type="number" id="custom-z" step="0.01" min="0.01" value="1.96"
+                           placeholder="Custom Z" class="hidden mt-8">
+                </div>
+
+                <!-- ABC -->
+                <div class="form-group" style="margin-bottom:0;">
+                    <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer;">
+                        <input type="checkbox" id="use-default-abc" checked
+                               onchange="toggleAbc()" style="width:auto; accent-color: var(--accent);">
+                        <span>Default ABC thresholds</span>
+                    </label>
+                    <div id="abc-custom" class="form-row hidden" style="margin-top:8px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>A threshold</label>
+                            <input type="number" id="abc-a" step="0.01" min="0" max="1" value="0.80">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>B threshold</label>
+                            <input type="number" id="abc-b" step="0.01" min="0" max="1" value="0.95">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- XYZ -->
+                <div class="form-group" style="margin-bottom:0;">
+                    <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer;">
+                        <input type="checkbox" id="use-default-xyz" checked
+                               onchange="toggleXyz()" style="width:auto; accent-color: var(--accent);">
+                        <span>Default XYZ thresholds</span>
+                    </label>
+                    <div id="xyz-custom" class="form-row hidden" style="margin-top:8px;">
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>X max CV</label>
+                            <input type="number" id="xyz-x" step="0.01" min="0" value="0.50">
+                        </div>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label>Y max CV</label>
+                            <input type="number" id="xyz-y" step="0.01" min="0" value="1.00">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ ACTION BAR ═══════════ -->
+        <div class="card" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
+            <div class="flex-center" style="gap:8px;">
+                <button class="btn btn-success" id="run-btn" onclick="runCalculations()">
+                    ▶ Run Calculations
+                </button>
+                <span class="text-muted" id="run-status">Ready</span>
+            </div>
+            <div class="flex-center" style="gap:8px;">
+                <button class="btn btn-sm" onclick="resetAll()">Reset</button>
+            </div>
+        </div>
+
+        <div id="error-box" class="alert alert-error hidden"></div>
+        <div id="warn-box" class="alert alert-warn hidden"></div>
+        <div id="info-box" class="alert alert-success hidden"></div>
+
+        <!-- ─── RESULTS ─── -->
+        <section id="results" class="hidden">
+            <div class="card-title">
+                📈 Results
+                <span class="badge" id="resultBadge">—</span>
+                <span class="data-source" id="resultSource">Awaiting run</span>
+            </div>
+
+            <div class="results-action-bar">
+                <div class="left">
+                    <button class="btn btn-primary btn-sm" onclick="downloadCSV()">⬇ Download CSV</button>
+                    <span class="run-status-sm done" id="rerunStatus">Done</span>
+                </div>
+                <div class="right">
+                    <span class="text-muted" id="rerunInfo"></span>
+                </div>
+            </div>
+
+            <div class="grid-4" id="summary-grid" style="margin-bottom:20px;"></div>
+
+            <div class="card" style="padding:12px;">
+                <div class="card-title" style="font-size:12px; padding-left:8px; padding-top:8px;">
+                    📋 Product Classification &amp; Parameters
+                </div>
+                <div class="table-responsive">
+                    <table id="results-table">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>ABC</th>
+                                <th>XYZ</th>
+                                <th class="num">CV</th>
+                                <th class="num">Annual Dmd</th>
+                                <th class="num">SS</th>
+                                <th class="num">RoP</th>
+                                <th class="num">EOQ</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <div style="margin-top:32px; text-align:center; font-size:12px; color:var(--text-muted); border-top:1px solid var(--border); padding-top:20px;">
+            Industrial Engineering Assistance &bull; Inventory Management Engine v1.0
+        </div>
+    </div>
+
+    <!-- ─── JAVASCRIPT ─── -->
+    <script>
+        (function() {
+            'use strict';
+
+            // ---------------------------------------------------------------------------
+            // State
+            // ---------------------------------------------------------------------------
+            const state = {
+                loading: true,
+                error: null,
+                activeTab: "dashboard",   // "dashboard" | "0" | "1" | ...
+                products: [],             // editable product objects (loaded from DB)
+                results: null,
+            };
+
+            const PALETTE = ['#ffcc00', '#22c55e', '#0891b2', '#7c3aed', '#dc2626',
+                             '#f59e0b', '#64748b', '#16a34a', '#ec4899', '#14b8a6',
+                             '#8b5cf6', '#ef4444', '#0ea5e9', '#84cc16', '#f97316'];
+
+            // ---------------------------------------------------------------------------
+            // Nav
+            // ---------------------------------------------------------------------------
+            const hamburger = document.getElementById('hamburgerBtn');
+            const navPanel = document.getElementById('navPanel');
+            const navOverlay = document.getElementById('navOverlay');
+            const navClose = document.getElementById('navClose');
+            const statusText = document.getElementById('statusText');
+            const statusDot = document.getElementById('statusDot');
+            const toast = document.getElementById('toast');
+            let toastTimer = null;
+
+            function openNav() {
+                hamburger.classList.add('active');
+                navPanel.classList.add('open');
+                navOverlay.classList.add('open');
+                document.body.style.overflow = 'hidden';
+            }
+            function closeNav() {
+                hamburger.classList.remove('active');
+                navPanel.classList.remove('open');
+                navOverlay.classList.remove('open');
+                document.body.style.overflow = '';
+            }
+            hamburger.addEventListener('click', () => {
+                if (navPanel.classList.contains('open')) closeNav(); else openNav();
+            });
+            navClose.addEventListener('click', closeNav);
+            navOverlay.addEventListener('click', closeNav);
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && navPanel.classList.contains('open')) closeNav();
+            });
+
+            function setStatus(text, busy = false) {
+                statusText.textContent = text;
+                statusDot.className = 'status-dot' + (busy ? ' busy' : '');
+            }
+
+            function showToast(msg, type = '') {
+                toast.textContent = msg;
+                toast.className = 'toast ' + type;
+                clearTimeout(toastTimer);
+                void toast.offsetWidth;
+                toast.classList.add('show');
+                toastTimer = setTimeout(() => toast.classList.remove('show'), 3200);
+            }
+
+            // ---------------------------------------------------------------------------
+            // Helpers
+            // ---------------------------------------------------------------------------
+            function esc(v) {
+                return String(v ?? "").replace(/[&<>"']/g, c => ({
+                    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+                }[c]));
+            }
+
+            function parseDemand(str) {
+                if (Array.isArray(str)) {
+                    return str.map(Number).filter(n => !isNaN(n));
+                }
+                return String(str ?? "")
+                    .split(/[,;\s]+/)
+                    .map(s => s.trim())
+                    .filter(Boolean)
+                    .map(Number)
+                    .filter(n => !isNaN(n));
+            }
+
+            function computeStats(vals) {
+                const n = vals.length;
+                if (!n) return { n: 0, mean: 0, sd: 0, cv: null, total: 0 };
+                const total = vals.reduce((a, b) => a + b, 0);
+                const mean = total / n;
+                const variance = n > 1
+                    ? vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)
+                    : 0;
+                const sd = Math.sqrt(variance);
+                return { n, mean, sd, cv: mean ? sd / mean : null, total };
+            }
+
+            function fmtNum(n, d = 2) {
+                if (n === null || n === undefined || isNaN(n)) return "—";
+                return Number(n).toLocaleString("en-US", {
+                    minimumFractionDigits: d, maximumFractionDigits: d,
+                });
+            }
+
+            function truncate(s, n) {
+                s = String(s ?? "");
+                return s.length > n ? s.slice(0, n - 1) + "…" : s;
+            }
+
+            // ---------------------------------------------------------------------------
+            // Load products from the database
+            // ---------------------------------------------------------------------------
+            async function reloadProducts() {
+                state.loading = true;
+                state.error = null;
+                document.getElementById('db-status-badge').textContent = "Loading…";
+                renderTabs();
+                renderInputBody();
+
+                try {
+                    const res = await fetch("/api/products/with-demand");
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Failed to load products");
+
+                    state.products = (data.products || []).map(p => {
+                        const series = (p.demand_history || []).map(d => ({
+                            date: d.date || null,
+                            demand: Number(d.demand),
+                        }));
+                        return {
+                            id: p.id,
+                            product_id: String(p.id),
+                            product_name: p.name || "",
+                            sku: p.sku || "",
+                            demand_series: series,
+                            demand_history: series.map(d => d.demand).join(", "),
+                            unit_cost: p.unit_cost ?? "",
+                            lead_time_days: p.lead_time_days ?? "",
+                            ordering_cost: p.ordering_cost ?? "",
+                            holding_cost_rate: p.holding_cost_rate ?? 0.25,
+                        };
+                    });
+
+                    // Keep the current tab if still valid, else go to dashboard
+                    if (state.activeTab !== "dashboard" &&
+                        Number(state.activeTab) >= state.products.length) {
+                        state.activeTab = "dashboard";
+                    }
+
+                    document.getElementById('db-status-badge').textContent =
+                        `${state.products.length} product(s)`;
+                    showToast(`Loaded ${state.products.length} product(s) from database`, "success");
+                } catch (err) {
+                    state.products = [];
+                    state.error = err.message;
+                    document.getElementById('db-status-badge').textContent = "Error";
+                    showToast("Failed to load products: " + err.message, "error");
+                } finally {
+                    state.loading = false;
+                    renderTabs();
+                    renderInputBody();
+                    setStatus("Ready", false);
+                }
+            }
+            window.reloadProducts = reloadProducts;
+
+            // ---------------------------------------------------------------------------
+            // Tabs
+            // ---------------------------------------------------------------------------
+            function renderTabs() {
+                const strip = document.getElementById('tab-strip');
+                const prevScroll = strip.scrollLeft;
+
+                if (state.loading || !state.products.length) {
+                    strip.innerHTML =
+                        `<button class="ptab dash active">📊 Dashboard</button>`;
+                    return;
+                }
+
+                const parts = [
+                    `<button class="ptab dash ${state.activeTab === 'dashboard' ? 'active' : ''}"
+                             data-tab="dashboard">📊 Dashboard</button>`
+                ];
+
+                state.products.forEach((p, i) => {
+                    const label = p.product_name || p.sku || `Product ${i + 1}`;
+                    const active = state.activeTab === String(i) ? 'active' : '';
+                    parts.push(
+                        `<button class="ptab ${active}" data-tab="${i}"
+                                 title="${esc(label)}">${esc(truncate(label, 22))}</button>`
+                    );
+                });
+
+                strip.innerHTML = parts.join("");
+                strip.querySelectorAll('.ptab').forEach(btn => {
+                    btn.addEventListener('click', () => setTab(btn.dataset.tab));
+                });
+                strip.scrollLeft = prevScroll;
+            }
+
+            function setTab(tab) {
+                state.activeTab = String(tab);
+                renderTabs();
+                renderInputBody();
+                // ensure the active tab is visible
+                const active = document.querySelector('.ptab.active');
+                if (active && active.scrollIntoView) {
+                    active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                }
+            }
+            window.setTab = setTab;
+
+            // ---------------------------------------------------------------------------
+            // Input body dispatcher
+            // ---------------------------------------------------------------------------
+            function renderInputBody() {
+                const body = document.getElementById('input-body');
+
+                if (state.loading) {
+                    body.innerHTML =
+                        '<div class="empty-state">' +
+                            '<span class="loading-spinner"></span>' +
+                            '<p style="margin-top:10px;">Loading products from database…</p>' +
+                        '</div>';
+                    return;
+                }
+
+                if (state.error) {
+                    body.innerHTML =
+                        `<div class="empty-state">` +
+                            `<span class="icon">⚠️</span>` +
+                            `<p>${esc(state.error)}</p>` +
+                        `</div>`;
+                    return;
+                }
+
+                if (!state.products.length) {
+                    body.innerHTML =
+                        '<div class="empty-state">' +
+                            '<span class="icon">📭</span>' +
+                            '<p>No products in the database yet.<br>' +
+                            'Import data first (Forecast module / API), then click “↻ Reload from DB”.</p>' +
+                        '</div>';
+                    return;
+                }
+
+                if (state.activeTab === "dashboard") {
+                    renderDashboard();
+                } else {
+                    const idx = parseInt(state.activeTab, 10);
+                    if (isNaN(idx) || !state.products[idx]) {
+                        state.activeTab = "dashboard";
+                        renderTabs();
+                        renderDashboard();
+                    } else {
+                        renderProductPanel(idx);
+                    }
+                }
+            }
+
+            // ---------------------------------------------------------------------------
+            // DASHBOARD TAB
+            // ---------------------------------------------------------------------------
+            function renderDashboard() {
+                const prods = state.products;
+
+                let totalRecords = 0, leadSum = 0, inventoryValue = 0;
+                prods.forEach(p => {
+                    const vals = parseDemand(p.demand_history);
+                    const st = computeStats(vals);
+                    totalRecords += st.n;
+                    leadSum += Number(p.lead_time_days) || 0;
+                    inventoryValue += (Number(p.unit_cost) || 0) * st.mean;
+                });
+
+                const avgLead = prods.length ? leadSum / prods.length : 0;
+
+                const rows = prods.map((p, i) => {
+                    const vals = parseDemand(p.demand_history);
+                    const st = computeStats(vals);
+                    return `
+                        <tr class="clickable" onclick="setTab('${i}')">
+                            <td>
+                                <strong>${esc(p.product_name || p.sku || 'Product ' + (i + 1))}</strong><br>
+                                <small style="color:var(--text-muted)">SKU: ${esc(p.sku || '—')}</small>
+                            </td>
+                            <td class="num mono">${st.n}</td>
+                            <td class="num mono">${fmtNum(st.mean)}</td>
+                            <td class="num mono">${st.cv === null ? '∞' : st.cv.toFixed(3)}</td>
+                            <td class="num mono">${fmtNum(p.lead_time_days, 0)}</td>
+                            <td class="num mono">${fmtNum(p.unit_cost)}</td>
+                        </tr>
+                    `;
+                }).join("");
+
+                document.getElementById('input-body').innerHTML = `
+                    <div class="grid-4" style="margin-bottom:18px;">
+                        <div class="stat-box">
+                            <div class="stat-value">${prods.length}</div>
+                            <div class="stat-label">Products</div>
+                            <div class="stat-sub">from database</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">${totalRecords.toLocaleString('en-US')}</div>
+                            <div class="stat-label">Demand Records</div>
+                            <div class="stat-sub">total observations</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">${fmtNum(avgLead, 1)}</div>
+                            <div class="stat-label">Avg Lead Time</div>
+                            <div class="stat-sub">days</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value">$${fmtNum(inventoryValue, 0)}</div>
+                            <div class="stat-label">Avg Stock Value</div>
+                            <div class="stat-sub">unit cost × mean demand</div>
+                        </div>
+                    </div>
+
+                    <div class="card-title" style="font-size:12px; margin-bottom:10px;">
+                        📈 Demand History — all products
+                    </div>
+                    <div id="dash-chart" style="width:100%; height:300px;"></div>
+
+                    <div class="card-title" style="font-size:12px; margin-top:20px; margin-bottom:10px;">
+                        📋 Products <span class="label-hint" style="text-transform:none; font-weight:400;">(click a row to edit)</span>
+                    </div>
+                    <div class="table-responsive" style="max-height:320px; overflow-y:auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th class="num">Points</th>
+                                    <th class="num">Mean</th>
+                                    <th class="num">CV</th>
+                                    <th class="num">Lead (d)</th>
+                                    <th class="num">Unit Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                `;
+
+                drawDashboardChart();
+            }
+
+            function drawDashboardChart() {
+                const el = document.getElementById('dash-chart');
+                if (!el || typeof Plotly === 'undefined') return;
+
+                const prods = state.products.slice(0, 15);
+                const allHaveDates = prods.length > 0 && prods.every(p => {
+                    const vals = parseDemand(p.demand_history);
+                    const ds = p.demand_series || [];
+                    return ds.length === vals.length && ds.length > 0 && ds.every(d => d.date);
+                });
+
+                const traces = [];
+                prods.forEach((p, i) => {
+                    const vals = parseDemand(p.demand_history);
+                    if (!vals.length) return;
+                    const ds = p.demand_series || [];
+                    const x = allHaveDates ? ds.map(d => d.date) : vals.map((_, k) => k + 1);
+                    traces.push({
+                        x, y: vals,
+                        type: 'scatter', mode: 'lines',
+                        name: truncate(p.product_name || p.sku || `#${i + 1}`, 22),
+                        line: { color: PALETTE[i % PALETTE.length], width: 1.8 },
+                        hovertemplate: '%{x}<br>Demand: %{y}<extra>' +
+                                       esc(p.product_name || p.sku || '') + '</extra>',
+                    });
+                });
+
+                if (!traces.length) {
+                    el.innerHTML =
+                        '<div class="empty-state"><span class="icon">📉</span>' +
+                        '<p>No demand data available.</p></div>';
+                    return;
+                }
+
+                try {
+                    Plotly.newPlot(el, traces, {
+                        margin: { l: 48, r: 14, t: 8, b: 42 },
+                        paper_bgcolor: 'rgba(0,0,0,0)',
+                        plot_bgcolor: 'rgba(0,0,0,0)',
+                        font: { family: 'Inter, sans-serif', size: 11, color: '#7a6e5e' },
+                        xaxis: {
+                            type: allHaveDates ? 'date' : 'category',
+                            showgrid: false,
+                            color: '#b0a292',
+                        },
+                        yaxis: { gridcolor: '#e8ddd0', zeroline: false },
+                        legend: { orientation: 'h', y: -0.22, font: { size: 10 } },
+                        height: 300,
+                    }, { displayModeBar: false, responsive: true });
+                } catch (e) { /* Plotly offline */ }
+            }
+
+            // ---------------------------------------------------------------------------
+            // PRODUCT TAB
+            // ---------------------------------------------------------------------------
+            function renderProductPanel(idx) {
+                const p = state.products[idx];
+                if (!p) return;
+
+                const vals = parseDemand(p.demand_history);
+                const st = computeStats(vals);
+
+                document.getElementById('input-body').innerHTML = `
+                    <div class="grid-2">
+                        <!-- LEFT: fields -->
+                        <div>
+                            <div class="form-row">
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Product ID</label>
+                                    <input type="text" value="${esc(p.product_id)}"
+                                           oninput="onField(${idx}, 'product_id', this.value)">
+                                </div>
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Product Name</label>
+                                    <input type="text" value="${esc(p.product_name)}"
+                                           oninput="onField(${idx}, 'product_name', this.value)">
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-top:12px;">
+                                <label>
+                                    Historical demand values
+                                    <span class="label-hint">(comma-separated · loaded from DB)</span>
+                                </label>
+                                <input type="text" value="${esc(p.demand_history)}"
+                                       oninput="onField(${idx}, 'demand_history', this.value)"
+                                       onchange="refreshProductPanel(${idx})">
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Unit Cost</label>
+                                    <input type="number" step="0.01" min="0" value="${esc(p.unit_cost)}"
+                                           oninput="onField(${idx}, 'unit_cost', this.value)">
+                                </div>
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Lead Time (days)</label>
+                                    <input type="number" step="1" min="0" value="${esc(p.lead_time_days)}"
+                                           oninput="onField(${idx}, 'lead_time_days', this.value)">
+                                </div>
+                            </div>
+
+                            <div class="form-row" style="margin-top:12px;">
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Ordering Cost</label>
+                                    <input type="number" step="0.01" min="0" value="${esc(p.ordering_cost)}"
+                                           oninput="onField(${idx}, 'ordering_cost', this.value)">
+                                </div>
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label>Holding Cost Rate</label>
+                                    <input type="number" step="0.01" min="0" value="${esc(p.holding_cost_rate)}"
+                                           oninput="onField(${idx}, 'holding_cost_rate', this.value)">
+                                </div>
+                            </div>
+
+                            <div class="flex-center mt-16" style="gap:10px; flex-wrap:wrap;">
+                                <button class="btn btn-sm" onclick="restoreFromDb(${idx})">
+                                    ↻ Restore from DB
+                                </button>
+                                <span class="text-muted">SKU: ${esc(p.sku || '—')}</span>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT: stats + chart -->
+                        <div>
+                            <div class="grid-2" style="gap:10px; margin-bottom:14px;">
+                                <div class="stat-box" style="padding:12px;">
+                                    <div class="stat-value" style="font-size:20px;">${fmtNum(st.mean)}</div>
+                                    <div class="stat-label">Mean</div>
+                                </div>
+                                <div class="stat-box" style="padding:12px;">
+                                    <div class="stat-value" style="font-size:20px;">${fmtNum(st.sd)}</div>
+                                    <div class="stat-label">Std Dev</div>
+                                </div>
+                                <div class="stat-box" style="padding:12px;">
+                                    <div class="stat-value" style="font-size:20px;">${st.cv === null ? '∞' : st.cv.toFixed(3)}</div>
+                                    <div class="stat-label">CV</div>
+                                </div>
+                                <div class="stat-box" style="padding:12px;">
+                                    <div class="stat-value" style="font-size:20px;">${st.n}</div>
+                                    <div class="stat-label">Data Points</div>
+                                </div>
+                            </div>
+                            <div id="product-chart" style="width:100%; height:250px;"></div>
+                        </div>
+                    </div>
+                `;
+
+                drawProductChart(idx);
+            }
+
+            function drawProductChart(idx) {
+                const el = document.getElementById('product-chart');
+                if (!el || typeof Plotly === 'undefined') return;
+
+                const p = state.products[idx];
+                if (!p) return;
+
+                const vals = parseDemand(p.demand_history);
+                if (!vals.length) {
+                    el.innerHTML =
+                        '<div class="empty-state"><span class="icon">📉</span>' +
+                        '<p>No demand data for this product.</p></div>';
+                    return;
+                }
+
+                const ds = p.demand_series || [];
+                const useDates = ds.length === vals.length && ds.every(d => d.date);
+                const x = useDates ? ds.map(d => d.date) : vals.map((_, i) => i + 1);
+
+                try {
+                    Plotly.newPlot(el, [{
+                        x, y: vals,
+                        type: 'scatter', mode: 'lines+markers',
+                        line: { color: '#ffcc00', width: 2.2 },
+                        marker: { size: 5, color: '#1e1a16' },
+                        fill: 'tozeroy',
+                        fillcolor: 'rgba(255,204,0,0.15)',
+                        hovertemplate: '%{x}<br>Demand: %{y}<extra></extra>',
+                    }], {
+                        margin: { l: 44, r: 10, t: 8, b: 34 },
+                        paper_bgcolor: 'rgba(0,0,0,0)',
+                        plot_bgcolor: 'rgba(0,0,0,0)',
+                        font: { family: 'Inter, sans-serif', size: 11, color: '#7a6e5e' },
+                        xaxis: {
+                            type: useDates ? 'date' : 'category',
+                            showgrid: false,
+                            color: '#b0a292',
+                        },
+                        yaxis: { gridcolor: '#e8ddd0', zeroline: false },
+                        showlegend: false,
+                        height: 250,
+                    }, { displayModeBar: false, responsive: true });
+                } catch (e) { /* Plotly offline */ }
+            }
+
+            // ---------------------------------------------------------------------------
+            // Product field editing
+            // ---------------------------------------------------------------------------
+            function onField(idx, key, value) {
+                const p = state.products[idx];
+                if (!p) return;
+                p[key] = value;
+
+                if (key === 'product_name' || key === 'product_id') {
+                    updateTabLabel(idx);
+                }
+            }
+            window.onField = onField;
+
+            function updateTabLabel(idx) {
+                const btn = document.querySelector(`.ptab[data-tab="${idx}"]`);
+                if (!btn) return;
+                const p = state.products[idx];
+                const label = p.product_name || p.sku || `Product ${idx + 1}`;
+                btn.textContent = truncate(label, 22);
+                btn.title = label;
+            }
+
+            function refreshProductPanel(idx) {
+                // Only re-render if this tab is still the active one
+                if (state.activeTab === String(idx)) {
+                    renderProductPanel(idx);
+                }
+            }
+            window.refreshProductPanel = refreshProductPanel;
+
+            function restoreFromDb(idx) {
+                const p = state.products[idx];
+                if (!p) return;
+                p.demand_history = (p.demand_series || []).map(d => d.demand).join(", ");
+                renderProductPanel(idx);
+                showToast("Demand history restored from database", "success");
+            }
+            window.restoreFromDb = restoreFromDb;
+
+            // ---------------------------------------------------------------------------
+            // Settings toggles
+            // ---------------------------------------------------------------------------
+            function toggleCustomZ() {
+                const v = document.getElementById("service-level").value;
+                document.getElementById("custom-z").classList.toggle("hidden", v !== "custom");
+            }
+            function toggleAbc() {
+                const checked = document.getElementById("use-default-abc").checked;
+                document.getElementById("abc-custom").classList.toggle("hidden", checked);
+            }
+            function toggleXyz() {
+                const checked = document.getElementById("use-default-xyz").checked;
+                document.getElementById("xyz-custom").classList.toggle("hidden", checked);
+            }
+            window.toggleCustomZ = toggleCustomZ;
+            window.toggleAbc = toggleAbc;
+            window.toggleXyz = toggleXyz;
+
+            // ---------------------------------------------------------------------------
+            // Run
+            // ---------------------------------------------------------------------------
+            function collectSettings() {
+                return {
+                    demand_period: document.getElementById("demand-period").value,
+                    service_level: document.getElementById("service-level").value,
+                    custom_z: document.getElementById("custom-z").value,
+                    use_default_abc: document.getElementById("use-default-abc").checked,
+                    abc_a: document.getElementById("abc-a").value,
+                    abc_b: document.getElementById("abc-b").value,
+                    use_default_xyz: document.getElementById("use-default-xyz").checked,
+                    xyz_x: document.getElementById("xyz-x").value,
+                    xyz_y: document.getElementById("xyz-y").value,
+                };
+            }
+
+            async function runCalculations() {
+                clearMessages();
+
+                if (state.loading) {
+                    showError("Products are still loading. Please wait.");
+                    return;
+                }
+                if (!state.products.length) {
+                    showError("No products available. Load products from the database first.");
+                    showToast("No products available.", "error");
+                    return;
+                }
+
+                const btn = document.getElementById("run-btn");
+                const runStatus = document.getElementById("run-status");
+                btn.disabled = true;
+                btn.innerHTML = '<span class="loading-spinner"></span> Calculating...';
+                runStatus.textContent = "Running...";
+                setStatus("Calculating...", true);
+
+                try {
+                    const products = state.products.map(p => ({
+                        product_id: p.product_id || p.sku || p.id,
+                        product_name: p.product_name,
+                        demand_history: p.demand_history,
+                        unit_cost: parseFloat(p.unit_cost) || 0,
+                        lead_time_days: parseFloat(p.lead_time_days) || 0,
+                        ordering_cost: parseFloat(p.ordering_cost) || 0,
+                        holding_cost_rate: parseFloat(p.holding_cost_rate) || 0.25,
+                    }));
+
+                    const res = await fetch("/api/calculate", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            products,
+                            settings: collectSettings(),
+                        }),
+                    });
+
+                    const data = await res.json();
+                    if (!res.ok || data.error) {
+                        let msg = data.error || `Server error (${res.status})`;
+                        if (data.validation_errors && data.validation_errors.length) {
+                            msg += "\n• " + data.validation_errors.join("\n• ");
+                        }
+                        showError(msg);
+                        showToast("Calculation failed", "error");
+                        setStatus("Error", false);
+                        runStatus.textContent = "Error";
+                        return;
+                    }
+
+                    state.results = data;
+                    renderResults(data);
+                    showToast("✅ Calculations complete!", "success");
+                    setStatus("Done", false);
+                    runStatus.textContent = "Done";
+
+                    if (data.validation_errors && data.validation_errors.length) {
+                        showWarn(`${data.validation_errors.length} validation warning(s):\n• ` +
+                                 data.validation_errors.join("\n• "));
+                    }
+                } catch (err) {
+                    showError("Request failed: " + err.message);
+                    showToast("Request failed", "error");
+                    setStatus("Error", false);
+                    runStatus.textContent = "Error";
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = "▶ Run Calculations";
+                }
+            }
+            window.runCalculations = runCalculations;
+
+            // ---------------------------------------------------------------------------
+            // Render results
+            // ---------------------------------------------------------------------------
+            function fmt(n, d = 2) {
+                if (n === null || n === undefined) return "—";
+                return Number(n).toLocaleString("en-US", {
+                    minimumFractionDigits: d, maximumFractionDigits: d,
+                });
+            }
+
+            function renderResults(data) {
+                const s = data.summary;
+
+                document.getElementById("summary-grid").innerHTML = `
+                    <div class="stat-box">
+                        <div class="stat-value">${s.n_products}</div>
+                        <div class="stat-label">Products</div>
+                        <div class="stat-sub">classified</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">$${fmt(s.total_acv, 0)}</div>
+                        <div class="stat-label">Total Annual ACV</div>
+                        <div class="stat-sub">consumption value</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value small">
+                            <span class="badge-cls badge-A">A:${s.abc_counts.A}</span>
+                            <span class="badge-cls badge-B">B:${s.abc_counts.B}</span>
+                            <span class="badge-cls badge-C">C:${s.abc_counts.C}</span>
+                        </div>
+                        <div class="stat-label">ABC Breakdown</div>
+                        <div class="stat-sub">by value</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value small">
+                            <span class="badge-cls badge-X">X:${s.xyz_counts.X}</span>
+                            <span class="badge-cls badge-Y">Y:${s.xyz_counts.Y}</span>
+                            <span class="badge-cls badge-Z">Z:${s.xyz_counts.Z}</span>
+                        </div>
+                        <div class="stat-label">XYZ Breakdown</div>
+                        <div class="stat-sub">by variability</div>
+                    </div>
+                `;
+
+                const tbody = document.querySelector("#results-table tbody");
+                tbody.innerHTML = data.rows.map(r => `
+                    <tr>
+                        <td>
+                            <strong>${esc(r.product_id)}</strong><br>
+                            <small style="color:var(--text-muted)">${esc(r.product_name)}</small>
+                        </td>
+                        <td><span class="badge-cls badge-${r.abc_class}">${r.abc_class}</span></td>
+                        <td><span class="badge-cls badge-${r.xyz_class}">${r.xyz_class}</span></td>
+                        <td class="num mono">${r.cv === null ? "∞" : r.cv.toFixed(4)}</td>
+                        <td class="num">${fmt(r.annual_demand)}</td>
+                        <td class="num">${fmt(r.safety_stock)}</td>
+                        <td class="num">${fmt(r.reorder_point)}</td>
+                        <td class="num">${r.eoq === null ? "N/A" : fmt(r.eoq, 1)}</td>
+                    </tr>
+                `).join("");
+
+                document.getElementById("resultBadge").textContent = `${s.n_products} products`;
+                document.getElementById("resultSource").textContent = `Solved · ${s.n_products} classified`;
+                document.getElementById("rerunInfo").textContent =
+                    `${s.n_products} products · $${fmt(s.total_acv, 0)} ACV`;
+
+                const resultsEl = document.getElementById("results");
+                resultsEl.classList.remove("hidden");
+                resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+
+            // ---------------------------------------------------------------------------
+            // CSV download
+            // ---------------------------------------------------------------------------
+            function downloadCSV() {
+                if (!state.results) return;
+                const cols = [
+                    ["product_id", "Product_ID"],
+                    ["product_name", "Product_Name"],
+                    ["abc_class", "ABC_Class"],
+                    ["xyz_class", "XYZ_Class"],
+                    ["combined_class", "Combined_Class"],
+                    ["cv", "CV"],
+                    ["annual_demand", "Annual_Demand"],
+                    ["annual_consumption_value", "Annual_Consumption_Value"],
+                    ["cumulative_acv_percentage", "Cumulative_ACV_%"],
+                    ["safety_stock", "Safety_Stock"],
+                    ["reorder_point", "Reorder_Point"],
+                    ["eoq", "EOQ"],
+                    ["unit_cost", "Unit_Cost"],
+                    ["lead_time_days", "Lead_Time_Days"],
+                    ["lead_time_periods", "Lead_Time_Periods"],
+                    ["mean_demand", "Mean_Demand"],
+                    ["demand_stddev", "Demand_StdDev"],
+                    ["lead_time_demand", "Lead_Time_Demand"],
+                    ["z_value", "Z_Value"],
+                    ["service_level", "Service_Level"],
+                ];
+                const header = cols.map(([, label]) => label).join(",");
+                const lines = state.results.rows.map(r =>
+                    cols.map(([key]) => {
+                        const v = r[key];
+                        if (v === null || v === undefined) return "";
+                        const s = String(v);
+                        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+                    }).join(",")
+                );
+                const csv = [header, ...lines].join("\n");
+
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "inventory_results.csv";
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast("CSV downloaded", "success");
+            }
+            window.downloadCSV = downloadCSV;
+
+            // ---------------------------------------------------------------------------
+            // Messages / reset
+            // ---------------------------------------------------------------------------
+            function showError(msg) {
+                const box = document.getElementById("error-box");
+                box.textContent = msg;
+                box.classList.remove("hidden");
+            }
+            function showWarn(msg) {
+                const box = document.getElementById("warn-box");
+                box.textContent = msg;
+                box.classList.remove("hidden");
+            }
+            function showInfo(msg) {
+                const box = document.getElementById("info-box");
+                box.textContent = msg;
+                box.classList.remove("hidden");
+            }
+            function clearMessages() {
+                document.getElementById("error-box").classList.add("hidden");
+                document.getElementById("warn-box").classList.add("hidden");
+                document.getElementById("info-box").classList.add("hidden");
+            }
+
+            function resetAll() {
+                state.results = null;
+                state.activeTab = "dashboard";
+                document.getElementById("results").classList.add("hidden");
+                clearMessages();
+                setStatus("Ready", false);
+                document.getElementById("run-status").textContent = "Ready";
+                reloadProducts();
+                showToast("Reset complete", "");
+            }
+            window.resetAll = resetAll;
+
+            // ---------------------------------------------------------------------------
+            // Init
+            // ---------------------------------------------------------------------------
+            setStatus("Ready", false);
+            reloadProducts();
+        })();
+    </script>
+</body>
+</html>

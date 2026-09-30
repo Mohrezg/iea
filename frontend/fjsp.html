@@ -1,0 +1,1993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IEA · Production Scheduling</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+    <style>
+        /* ── Reset & Root ── */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #fdf8f0;
+            --surface: #ffffff;
+            --surface2: #f7f2e9;
+            --border: #e8ddd0;
+            --text: #1e1a16;
+            --text-dim: #7a6e5e;
+            --text-muted: #b0a292;
+            --accent: #ffcc00;
+            --accent-dim: #e6b800;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+            --radius: 14px;
+            --font: 'Inter', -apple-system, sans-serif;
+            --header-height: 68px;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #dc2626;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            min-height: 100vh;
+            padding: 0 20px 40px;
+            padding-top: calc(var(--header-height) + 20px);
+        }
+        a { color: inherit; text-decoration: none; }
+        button { font-family: inherit; cursor: pointer; border: none; outline: none; }
+        input, select, textarea { font-family: inherit; outline: none; border: none; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--surface); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+        .app { max-width: 1400px; margin: 0 auto; }
+
+        /* Header */
+        .header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0 20px;
+            height: var(--header-height);
+            display: flex; align-items: center; justify-content: space-between;
+            box-shadow: var(--shadow);
+        }
+        .header-left { display: flex; align-items: center; gap: 14px; }
+        .header-center {
+            font-weight: 700; font-size: 18px; letter-spacing: -0.02em;
+            color: var(--text);
+            position: absolute; left: 50%; transform: translateX(-50%);
+            white-space: nowrap;
+        }
+        .header-center span { font-weight: 400; color: var(--text-dim); font-size: 14px; }
+        .header-status {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 13px; color: var(--text-dim);
+            background: var(--bg); padding: 6px 16px 6px 12px;
+            border-radius: 100px; border: 1px solid var(--border);
+        }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--success);
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        .status-dot.busy { background: var(--warning); }
+        @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        .hamburger {
+            width: 40px; height: 40px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 5px; background: transparent; border-radius: 8px;
+            transition: background 0.2s; padding: 0;
+            position: relative; z-index: 1001;
+        }
+        .hamburger:hover { background: var(--surface2); }
+        .hamburger span {
+            display: block; width: 22px; height: 2.5px;
+            background: var(--text); border-radius: 4px;
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+            transform-origin: center;
+        }
+        .hamburger.active span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
+        .hamburger.active span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+        .hamburger.active span:nth-child(3) { transform: rotate(-45deg) translate(5px, -5px); }
+
+        .nav-overlay {
+            position: fixed; inset: 0; background: rgba(0, 0, 0, 0.3);
+            z-index: 999; opacity: 0; pointer-events: none;
+            transition: opacity 0.35s ease;
+        }
+        .nav-overlay.open { opacity: 1; pointer-events: auto; }
+        .nav-panel {
+            position: fixed; top: 0; left: 0; bottom: 0;
+            width: 300px; max-width: 80vw;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            box-shadow: 4px 0 32px rgba(0, 0, 0, 0.1);
+            z-index: 1000; transform: translateX(-110%);
+            transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+            padding: 24px 20px; overflow-y: auto;
+            display: flex; flex-direction: column;
+        }
+        .nav-panel.open { transform: translateX(0); }
+        .nav-panel .nav-brand {
+            font-weight: 800; font-size: 20px; letter-spacing: -0.03em;
+            padding-bottom: 20px; border-bottom: 1px solid var(--border);
+            margin-bottom: 24px; color: var(--text);
+        }
+        .nav-panel .nav-brand span { color: var(--accent-dim); }
+        .nav-panel .nav-close {
+            position: absolute; top: 16px; right: 16px;
+            background: none; font-size: 24px; color: var(--text-dim);
+            padding: 4px 8px; border-radius: 6px;
+            transition: background 0.2s;
+        }
+        .nav-panel .nav-close:hover { background: var(--surface2); }
+        .nav-panel .nav-links { list-style: none; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+        .nav-panel .nav-links li a {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 16px; border-radius: 10px;
+            font-weight: 500; font-size: 15px;
+            color: var(--text-dim); transition: all 0.2s;
+        }
+        .nav-panel .nav-links li a:hover { background: var(--accent); color: var(--text); }
+        .nav-panel .nav-links li a .icon { font-size: 18px; width: 28px; text-align: center; }
+        .nav-panel .nav-links li a.active { background: var(--accent); color: var(--text); }
+        .nav-panel .nav-footer {
+            border-top: 1px solid var(--border);
+            padding-top: 16px; margin-top: 8px;
+            font-size: 12px; color: var(--text-muted);
+        }
+
+        /* Cards & Layout */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+        }
+        .card-title {
+            font-size: 14px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+        .card-title .badge {
+            font-size: 10px; background: var(--accent); color: #1e1a16;
+            padding: 2px 12px; border-radius: 100px; font-weight: 700;
+            text-transform: none;
+        }
+        .card-title .data-source {
+            font-size: 11px; color: var(--text-muted);
+            font-weight: 400; text-transform: none;
+            margin-left: auto;
+        }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+        .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
+        @media (max-width: 820px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 24px; border-radius: 8px;
+            font-weight: 600; font-size: 14px;
+            transition: all 0.2s;
+            background: var(--surface2); color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--text); }
+        .btn-primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+        .btn-success { background: var(--success); border-color: var(--success); color: #fff; }
+        .btn-success:hover { background: #16a34a; border-color: #16a34a; }
+        .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+        .btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }
+        .btn-sm { padding: 6px 14px; font-size: 12px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+
+        /* Forms */
+        .form-group { margin-bottom: 14px; }
+        .form-group label {
+            display: block; font-weight: 500; font-size: 13px;
+            color: var(--text-dim); margin-bottom: 4px;
+        }
+        .form-group input, .form-group select {
+            width: 100%; padding: 10px 14px;
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 8px; font-size: 14px; color: var(--text);
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(255, 204, 0, 0.15);
+        }
+        .form-row { display: flex; gap: 14px; flex-wrap: wrap; }
+        .form-row .form-group { flex: 1; min-width: 120px; }
+
+        /* Stats */
+        .stat-box {
+            background: var(--bg);
+            border-radius: 10px; padding: 16px 20px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+        .stat-box .stat-value {
+            font-size: 28px; font-weight: 800;
+            letter-spacing: -0.02em; color: var(--text);
+        }
+        .stat-box .stat-label {
+            font-size: 12px; color: var(--text-dim);
+            font-weight: 500; text-transform: uppercase;
+            letter-spacing: 0.04em; margin-top: 2px;
+        }
+        .stat-box .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+        /* Chart */
+        .chart-container {
+            background: var(--surface);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            padding: 8px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            min-height: 220px;
+        }
+        .chart-container .plotly { width: 100%; height: 100%; min-height: 220px; }
+        .legend-box {
+            display: flex; flex-wrap: wrap; gap: 6px 16px;
+            padding: 10px 14px;
+            background: var(--bg); border-radius: 8px;
+            border: 1px solid var(--border);
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 12px; color: var(--text);
+        }
+        .legend-color {
+            width: 18px; height: 4px; border-radius: 2px;
+            display: inline-block;
+        }
+        .legend-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            display: inline-block; border: 1px solid var(--border);
+        }
+
+        /* Tables */
+        .table-responsive { overflow-x: auto; margin-top: 4px; }
+        .table-responsive table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .table-responsive th {
+            text-align: left; padding: 6px 10px;
+            color: var(--text-dim); font-weight: 600; font-size: 11px;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            border-bottom: 1px solid var(--border);
+        }
+        .table-responsive td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+        .table-responsive tr:last-child td { border-bottom: none; }
+        .table-responsive .mono {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 12px;
+        }
+
+        /* Empty / Loading */
+        .empty-state { text-align: center; padding: 32px 16px; color: var(--text-muted); }
+        .empty-state .icon { font-size: 40px; display: block; margin-bottom: 8px; }
+        .empty-state p { font-size: 14px; }
+        .loading-spinner {
+            display: inline-block; width: 20px; height: 20px;
+            border: 2.5px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Tabs */
+        .tabs {
+            display: flex; gap: 4px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius) var(--radius) 0 0;
+            padding: 6px 10px 0 10px;
+            box-shadow: var(--shadow);
+            flex-wrap: wrap;
+        }
+        .tab-btn {
+            padding: 10px 22px; font-weight: 600; font-size: 14px;
+            color: var(--text-dim); background: transparent;
+            border-radius: 10px 10px 0 0;
+            transition: all 0.2s; border-bottom: 3px solid transparent;
+        }
+        .tab-btn:hover { color: var(--text); background: var(--surface2); }
+        .tab-btn.active {
+            color: var(--text); background: var(--surface);
+            border-bottom-color: var(--accent);
+            box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+        }
+        .tab-content {
+            display: none;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-top: none;
+            border-radius: 0 0 var(--radius) var(--radius);
+            padding: 24px 26px;
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+        }
+        .tab-content.active { display: block; }
+
+        /* Sheet (spreadsheet-like grid) */
+        .sheet-wrap {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface);
+            overflow: auto;
+            max-height: 240px;
+        }
+        table.sheet {
+            width: 100%; border-collapse: separate;
+            border-spacing: 0; font-size: 12px;
+        }
+        table.sheet thead th {
+            position: sticky; top: 0; z-index: 2;
+            background: var(--surface2);
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            padding: 0; text-align: left;
+        }
+        table.sheet thead th:last-child { border-right: none; }
+        table.sheet tbody td {
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            padding: 0; background: var(--surface);
+        }
+        table.sheet tbody td:last-child { border-right: none; }
+        table.sheet tbody tr:last-child td { border-bottom: none; }
+        table.sheet tbody tr:hover td { background: rgba(255, 204, 0, 0.05); }
+        table.sheet input {
+            width: 100%; padding: 6px 10px; font-size: 12px;
+            color: var(--text); background: transparent;
+            border: none; border-radius: 0; display: block;
+        }
+        table.sheet input:focus {
+            background: rgba(255, 204, 0, 0.13);
+            box-shadow: inset 0 0 0 1.5px var(--accent);
+        }
+        table.sheet input::placeholder { color: var(--text-muted); }
+        .sheet-head-input {
+            font-size: 9.5px !important; font-weight: 700 !important;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--text-dim) !important;
+            padding: 7px 10px !important;
+        }
+        .sheet-head-input:focus { color: var(--text) !important; }
+        table.sheet th.col-num, table.sheet td.col-num {
+            width: 34px; text-align: center;
+            color: var(--text-muted); font-size: 10px; font-weight: 700;
+            background: var(--surface2); padding: 6px 0;
+            border-right: 1px solid var(--border);
+        }
+        table.sheet th.col-act, table.sheet td.col-act {
+            width: 32px; border-right: none;
+        }
+        .row-del {
+            width: 100%; padding: 6px 0; background: transparent;
+            color: var(--text-muted); font-size: 11px; line-height: 1;
+            transition: background 0.15s, color 0.15s;
+        }
+        .row-del:hover { background: rgba(220, 38, 38, 0.10); color: var(--danger); }
+        .sheet-empty {
+            padding: 12px 10px; text-align: center;
+            color: var(--text-muted); font-size: 11px;
+        }
+
+        /* Manual input header bar */
+        .mini-head {
+            display: flex; align-items: center;
+            justify-content: space-between; gap: 10px;
+            flex-wrap: wrap; margin: 12px 0 6px;
+        }
+        .mini-label {
+            font-size: 11px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--text-dim);
+        }
+        .mini-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .mini-actions .btn { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
+
+        /* Cleaner preview table */
+        .preview-table-wrap {
+            max-height: 200px; overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 6px; margin-top: 6px;
+        }
+        .preview-table-wrap table {
+            width: 100%; border-collapse: collapse; font-size: 12px;
+        }
+        .preview-table-wrap thead th {
+            position: sticky; top: 0; z-index: 2;
+            background: var(--surface2);
+            color: var(--text-dim);
+            font-size: 9.5px; font-weight: 700;
+            letter-spacing: 0.07em; text-transform: uppercase;
+            text-align: left; padding: 7px 12px;
+            white-space: nowrap;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+        }
+        .preview-table-wrap thead th:last-child { border-right: none; }
+        .preview-table-wrap tbody td {
+            padding: 5px 12px; white-space: nowrap;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            color: var(--text);
+        }
+        .preview-table-wrap tbody td:last-child { border-right: none; }
+        .preview-table-wrap tbody tr:last-child td { border-bottom: none; }
+        .preview-table-wrap tbody tr:nth-child(even) { background: rgba(0, 0, 0, 0.014); }
+
+        /* Data status pill */
+        .data-status {
+            font-size: 12px; padding: 4px 12px; border-radius: 100px;
+            display: inline-block;
+        }
+        .data-status.loaded { background: rgba(34, 197, 94, 0.12); color: var(--success); }
+        .data-status.empty { background: var(--surface2); color: var(--text-muted); }
+        .data-status.error { background: rgba(220, 38, 38, 0.10); color: var(--danger); }
+
+        /* Algorithm selector (pills) */
+        .algo-selector {
+            display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+        }
+        .algo-selector .algo-option {
+            padding: 12px 20px; border-radius: 10px;
+            border: 2px solid var(--border);
+            background: var(--surface);
+            cursor: pointer; font-weight: 600; font-size: 14px;
+            transition: all 0.2s; color: var(--text-dim);
+            flex: 1; min-width: 200px;
+        }
+        .algo-selector .algo-option:hover { border-color: var(--text-muted); }
+        .algo-selector .algo-option.active {
+            border-color: var(--accent);
+            background: rgba(255, 204, 0, 0.08);
+            color: var(--text);
+        }
+        .algo-selector .algo-option .sub {
+            font-weight: 400; font-size: 11px;
+            color: var(--text-muted); display: block; margin-top: 2px;
+        }
+
+        /* Results action bar */
+        .results-action-bar {
+            display: flex; align-items: center;
+            justify-content: space-between; flex-wrap: wrap;
+            gap: 12px;
+            background: var(--surface2);
+            border-radius: 10px;
+            padding: 12px 18px;
+            border: 1px solid var(--border);
+            margin-bottom: 16px;
+        }
+        .results-action-bar .left,
+        .results-action-bar .right {
+            display: flex; align-items: center; gap: 12px;
+        }
+        .results-action-bar .run-status-sm {
+            font-size: 13px; color: var(--text-dim);
+        }
+        .results-action-bar .run-status-sm.busy { color: var(--warning); }
+        .results-action-bar .run-status-sm.done { color: var(--success); }
+
+        /* Data note */
+        .data-note {
+            font-size: 12px; color: var(--text-muted);
+            background: var(--surface2);
+            padding: 6px 14px; border-radius: 6px;
+            margin-top: 6px; border-left: 3px solid var(--accent);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 30px; right: 30px;
+            background: var(--text); color: #fff;
+            padding: 14px 24px; border-radius: 10px;
+            font-weight: 500; font-size: 14px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            z-index: 2000;
+            transform: translateY(120px); opacity: 0;
+            transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+            max-width: 420px;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.success { background: var(--success); color: #fff; }
+        .toast.error { background: var(--danger); color: #fff; }
+        .toast.warning { background: var(--warning); color: #fff; }
+
+        /* Misc */
+        .mt-8 { margin-top: 8px; }
+        .mt-16 { margin-top: 16px; }
+        .mt-24 { margin-top: 24px; }
+        .flex { display: flex; }
+        .flex-center { display: flex; align-items: center; gap: 12px; }
+        .text-muted { color: var(--text-muted); font-size: 12px; }
+        .text-center { text-align: center; }
+        .label-hint { font-weight: 400; color: var(--text-muted); }
+
+        /* Workstation Contribution — ranked bars */
+        .contrib-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .contrib-summary {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 10px 14px;
+            background: linear-gradient(90deg, rgba(255,204,0,0.20), rgba(255,204,0,0.03));
+            border-left: 3px solid var(--accent);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+        .contrib-summary strong { color: var(--text); font-weight: 700; }
+        .contrib-summary-route {
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
+            font-size: 11.5px;
+            background: var(--text);
+            color: var(--accent);
+            padding: 2px 9px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .contrib-row {
+            display: grid;
+            grid-template-columns: 26px 1fr 100px;
+            align-items: center;
+            gap: 12px;
+            padding: 7px 10px;
+            border-radius: 8px;
+            transition: background 0.15s;
+        }
+        .contrib-row:hover { background: var(--surface2); }
+        .contrib-rank {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-align: center;
+            background: var(--surface2);
+            border-radius: 6px;
+            padding: 3px 0;
+            line-height: 1.4;
+        }
+        .contrib-row.top1 .contrib-rank { background: var(--accent);     color: var(--text); }
+        .contrib-row.top2 .contrib-rank { background: var(--accent-dim); color: #fff; }
+        .contrib-row.top3 .contrib-rank { background: #fde68a;           color: var(--text); }
+        .contrib-body {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+        .contrib-name {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: var(--text);
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .contrib-bar-track {
+            height: 6px;
+            background: var(--surface2);
+            border-radius: 100px;
+            overflow: hidden;
+            position: relative;
+        }
+        .contrib-bar-fill {
+            height: 100%;
+            width: var(--bar-w, 0%);
+            border-radius: 100px;
+            transform: scaleX(0);
+            transform-origin: left center;
+            animation: contribBarGrow 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            background: linear-gradient(90deg, var(--accent), var(--accent-dim));
+        }
+        .contrib-row.top2 .contrib-bar-fill {
+            background: linear-gradient(90deg, #fbbf24, #f59e0b);
+        }
+        .contrib-row.top3 .contrib-bar-fill {
+            background: linear-gradient(90deg, #cbd5e1, #94a3b8);
+        }
+        .contrib-row:not(.top1):not(.top2):not(.top3) .contrib-bar-fill {
+            background: linear-gradient(90deg, #e2e8f0, #cbd5e1);
+        }
+        @keyframes contribBarGrow {
+            to { transform: scaleX(1); }
+        }
+        .contrib-value {
+            font-size: 12.5px;
+            font-weight: 700;
+            color: var(--text);
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
+            line-height: 1.15;
+        }
+        .contrib-pct {
+            display: block;
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        /* Routing checkbox selector (FJSP-specific) */
+        .routing-checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 4px;
+            padding: 12px 14px;
+            background: var(--bg);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            min-height: 56px;
+            align-items: flex-start;
+        }
+        .routing-checkbox-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            cursor: pointer;
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1.5px solid var(--border);
+            background: var(--surface);
+            transition: all 0.15s;
+            min-width: 68px;
+        }
+        .routing-checkbox-item:hover { border-color: var(--accent); }
+        .routing-checkbox-item.checked {
+            border-color: var(--accent);
+            background: rgba(255, 204, 0, 0.10);
+        }
+        .routing-checkbox-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--accent);
+        }
+        .routing-checkbox-item .ws-index {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            background: var(--surface2);
+            border-radius: 4px;
+            padding: 1px 7px;
+            line-height: 1.4;
+        }
+        .routing-checkbox-item.checked .ws-index {
+            background: var(--accent);
+            color: var(--text);
+        }
+        .routing-checkbox-item .ws-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text);
+            max-width: 80px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .routing-time-input {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            background: var(--surface);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .routing-time-input label {
+            font-size: 11px;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+        .routing-time-input input {
+            width: 60px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            font-size: 12px;
+            color: var(--text);
+        }
+        .routing-order-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-dim);
+            background: rgba(255, 204, 0, 0.18);
+            padding: 1px 7px;
+            border-radius: 4px;
+            margin-right: 2px;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            body { padding: 0 12px 24px; padding-top: calc(var(--header-height) + 16px); }
+            .tab-content { padding: 16px; }
+            .tabs { padding: 4px 6px 0 6px; }
+            .tab-btn { padding: 8px 14px; font-size: 13px; }
+            .header-center { font-size: 14px; position: static; transform: none; flex: 1; text-align: center; }
+            .header-center span { display: none; }
+            .header-status { font-size: 11px; padding: 4px 10px; }
+            .card { padding: 14px 16px; }
+            .stat-box .stat-value { font-size: 22px; }
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; gap: 12px; }
+            .form-row { flex-direction: column; }
+            .algo-selector .algo-option { flex: 1; text-align: center; padding: 10px 12px; font-size: 13px; }
+            .contrib-row { grid-template-columns: 22px 1fr 80px; gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ─── HEADER ─── -->
+    <header class="header">
+        <div class="header-left">
+            <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+        <div class="header-center">
+            Industrial Engineering Assistance <span>· Production Scheduling</span>
+        </div>
+        <div class="header-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Ready</span>
+        </div>
+    </header>
+
+    <!-- ─── SIDE NAV ─── -->
+    <div class="nav-overlay" id="navOverlay"></div>
+    <nav class="nav-panel" id="navPanel" role="navigation" aria-label="Main navigation">
+        <button class="nav-close" id="navClose" aria-label="Close menu">✕</button>
+        <div class="nav-brand">⚙️ <span>IEA</span> Suite</div>
+        <ul class="nav-links">
+            <li><a href="/"><span class="icon">🏠</span> Home</a></li>
+            <li><a href="/forecast"><span class="icon">📊</span> Forecast</a></li>
+            <li><a href="/stock"><span class="icon">📦</span> Stock Management</a></li>
+            <li><a href="/vrp"><span class="icon">🚚</span> Vehicle Routing</a></li>
+            <li><a href="/scheduling" class="active"><span class="icon">🏭</span> Production Scheduling</a></li>
+        </ul>
+        <div class="nav-footer">FJSP · Genetic Algorithm</div>
+    </nav>
+
+    <!-- ─── TOAST ─── -->
+    <div id="toast" class="toast"></div>
+
+    <!-- ─── MAIN ─── -->
+    <div class="app">
+
+        <!-- Tabs -->
+        <div class="tabs" id="tabBar">
+            <button class="tab-btn active" data-tab="tab-config">⚙️ Configure</button>
+            <button class="tab-btn" data-tab="tab-results">📈 Results</button>
+        </div>
+
+        <!-- ─── TAB: CONFIGURE ─── -->
+        <div id="tab-config" class="tab-content active">
+            <div class="card-title">
+                ⚙️ Scheduling Configuration
+                <span class="badge" id="configBadge">FJSP</span>
+                <span class="data-source">Define workstations &amp; jobs</span>
+            </div>
+
+            <div class="grid-2">
+                <!-- Workstations sheet -->
+                <div class="card">
+                    <div class="card-title" style="font-size:12px; margin-bottom:12px;">
+                        🏗️ Workstations &amp; Machines
+                        <span class="badge" id="wsCount">0 stations</span>
+                        <span class="data-status empty" id="wsStatus">no data</span>
+                    </div>
+
+                    <div class="mini-head" style="margin-top:0;">
+                        <span class="mini-label">✍️ Workstation grid</span>
+                        <div class="mini-actions">
+                            <button class="btn btn-sm" id="addWsRowBtn">＋ Row</button>
+                            <button class="btn btn-sm" id="clearWsBtn">Clear</button>
+                        </div>
+                    </div>
+                    <div class="sheet-wrap" id="wsGrid"></div>
+                    <div class="data-note" style="font-size:11px;">
+                        Order defines workstation index <strong>0, 1, 2 …</strong> — this is used by the routing selector on the right.
+                    </div>
+                </div>
+
+                <!-- Jobs -->
+                <div class="card">
+                    <div class="card-title" style="font-size:12px; margin-bottom:12px;">
+                        📋 Jobs
+                        <span class="badge" id="jobCount">0 jobs</span>
+                        <span class="data-status empty" id="jobStatus">no data</span>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1.2;">
+                            <label>Product <span class="label-hint">(from Stock tab)</span></label>
+                            <select id="jobProductSelect">
+                                <option value="">— Custom base name —</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>Base name</label>
+                            <input type="text" id="jobBaseName" placeholder="e.g. Job" value="Job" />
+                        </div>
+                        <div class="form-group" style="flex:0.6;">
+                            <label># Jobs</label>
+                            <input type="number" id="jobCountCreate" value="2" min="1" max="50" />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Routing <span class="label-hint">(click workstations in order)</span></label>
+                        <div id="routingCheckboxes" class="routing-checkbox-group"></div>
+                        <div id="routingTimesContainer" style="margin-top:8px;"></div>
+                        <div id="routingStatus" class="text-muted" style="font-size:12px; margin-top:4px;">
+                            Select workstations to build the route.
+                        </div>
+                    </div>
+
+                    <div class="flex-center" style="margin-bottom:12px;">
+                        <button class="btn btn-primary btn-sm" id="addJobsBtn">＋ Add Jobs</button>
+                        <span class="text-muted">Each job will be named &lt;base&gt;-&lt;index&gt;</span>
+                    </div>
+
+                    <div class="mini-head" style="margin-top:0;">
+                        <span class="mini-label">📋 Job list</span>
+                        <div class="mini-actions">
+                            <button class="btn btn-sm" id="clearJobsBtn">Clear all</button>
+                        </div>
+                    </div>
+                    <div id="jobList" class="preview-table-wrap" style="max-height:200px;"></div>
+                </div>
+            </div>
+
+            <!-- Algorithm & Parameters -->
+            <div class="card">
+                <div class="card-title" style="font-size:12px; margin-bottom:12px;">
+                    🧠 Algorithm &amp; Parameters
+                    <span class="badge">GA</span>
+                </div>
+
+                <div class="algo-selector" id="algoSelector">
+                    <div class="algo-option active" data-algo="ga">
+                        🧬 Genetic Algorithm
+                        <span class="sub">Population‑based evolution</span>
+                    </div>
+                </div>
+
+                <div class="form-row" style="margin-bottom:12px;">
+                    <div class="form-group" style="flex:0 1 200px;">
+                        <label>⏱️ Time limit (seconds)</label>
+                        <input type="number" id="timeLimit" value="" min="1" max="600" step="1" placeholder="∞" />
+                    </div>
+                    <div class="form-group" style="flex:1; display:flex; align-items:flex-end; margin-bottom:0;">
+                        <span class="text-muted" style="font-size:12px;">If set, the solver stops after this many seconds — overriding generations.</span>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Population size</label>
+                        <input type="number" id="popSize" value="200" min="50" max="400" />
+                    </div>
+                    <div class="form-group">
+                        <label>Generations <span class="label-hint">(ignored if time limit set)</span></label>
+                        <input type="number" id="genCount" value="150" min="50" max="500" />
+                    </div>
+                </div>
+
+                <div class="data-note">
+                    <strong>GA</strong> uses permutation encoding for operation sequencing and machine assignment.
+                    If a time limit is set, the solver runs for that duration and then stops, ignoring the generation count.
+                </div>
+            </div>
+
+            <!-- Action bar -->
+            <div class="card" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px;">
+                <div class="flex-center" style="gap:8px;">
+                    <button class="btn btn-success" id="runSchedulingBtn">🚀 Run Scheduling</button>
+                    <span class="text-muted" id="runStatus">Ready</span>
+                </div>
+            </div>
+
+            <div id="solverStatus" style="margin-top:8px; font-size:13px; color:var(--text-dim);">
+                <span id="solverStatusText">Add workstations, then click workstations in order to build routing, then add jobs.</span>
+            </div>
+        </div>
+
+        <!-- ─── TAB: RESULTS ─── -->
+        <div id="tab-results" class="tab-content">
+            <div class="card-title">
+                📈 Scheduling Results
+                <span class="badge" id="resultBadge">—</span>
+                <span class="data-source" id="resultSource">Awaiting run</span>
+            </div>
+
+            <div class="results-action-bar">
+                <div class="left">
+                    <button class="btn btn-primary btn-sm" id="rerunBtn">🔄 Re‑run</button>
+                    <span class="run-status-sm" id="rerunStatus">Ready</span>
+                </div>
+                <div class="right">
+                    <span class="text-muted" id="rerunInfo">Click to re‑run with current config</span>
+                </div>
+            </div>
+
+            <div class="grid-3" id="statsGrid">
+                <div class="stat-box">
+                    <div class="stat-value" id="statMakespan">—</div>
+                    <div class="stat-label">Makespan</div>
+                    <div class="stat-sub">time slots</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="statUtilization">—</div>
+                    <div class="stat-label">Machine Utilization</div>
+                    <div class="stat-sub">avg. across machines</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="statRuntime">—</div>
+                    <div class="stat-label">Solver Runtime</div>
+                    <div class="stat-sub">seconds</div>
+                </div>
+            </div>
+
+            <!-- Gantt -->
+            <div class="card" style="padding:8px;">
+                <div class="card-title" style="font-size:12px; margin-bottom:6px; padding-left:8px; padding-top:8px;">
+                    📊 Gantt Chart
+                    <span class="badge" id="ganttBadge">—</span>
+                </div>
+                <div class="chart-container" id="ganttContainer">
+                    <div id="ganttChart" class="plotly" style="height:420px;"></div>
+                </div>
+                <div id="ganttLegend" class="legend-box"></div>
+            </div>
+
+            <!-- Workstation Contribution -->
+            <div class="card">
+                <div class="card-title" style="font-size:12px; margin-bottom:6px;">
+                    📊 Workstation Load Contribution
+                    <span class="badge" id="contribBadge">—</span>
+                    <span class="data-source" id="contribSource">Awaiting run</span>
+                </div>
+                <div id="contribContainer">
+                    <div class="empty-state">
+                        <span class="icon">📊</span>
+                        <p>Run the scheduler to see how each workstation contributes to the makespan.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed schedule -->
+            <div class="card">
+                <div class="card-title" style="font-size:12px; margin-bottom:6px;">
+                    📋 Detailed Schedule
+                    <span class="badge" id="scheduleCount">0 operations</span>
+                </div>
+                <div class="table-responsive" id="scheduleTableContainer">
+                    <div class="empty-state">
+                        <span class="icon">📭</span>
+                        <p>Run the scheduler to see the detailed schedule.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top:32px; text-align:center; font-size:12px; color:var(--text-muted); border-top:1px solid var(--border); padding-top:20px;">
+            Industrial Engineering Assistance &bull; FJSP Scheduler v1.1
+        </div>
+    </div>
+
+    <!-- ─── JAVASCRIPT ─── -->
+    <script>
+        (function() {
+            'use strict';
+
+            // ── State ──
+            const state = {
+                workstations: [],
+                machinesPerWs: [],
+                jobs: [],
+                processingTimes: {},
+                schedule: null,
+                isRunning: false,
+                selectedRouting: [],
+            };
+
+            // ── DOM refs ──
+            const $ = (sel) => document.querySelector(sel);
+            const $$ = (sel) => document.querySelectorAll(sel);
+
+            const hamburger = $('#hamburgerBtn');
+            const navPanel = $('#navPanel');
+            const navOverlay = $('#navOverlay');
+            const navClose = $('#navClose');
+            const statusText = $('#statusText');
+            const statusDot = $('#statusDot');
+
+            const runBtn = $('#runSchedulingBtn');
+            const runStatus = $('#runStatus');
+            const genCount = $('#genCount');
+            const popSize = $('#popSize');
+            const timeLimitInput = $('#timeLimit');
+            const solverStatusText = $('#solverStatusText');
+
+            const wsGrid = $('#wsGrid');
+            const addWsRowBtn = $('#addWsRowBtn');
+            const clearWsBtn = $('#clearWsBtn');
+            const jobList = $('#jobList');
+            const jobBaseName = $('#jobBaseName');
+            const jobCountCreate = $('#jobCountCreate');
+            const jobProductSelect = $('#jobProductSelect');
+            const routingCheckboxes = $('#routingCheckboxes');
+            const routingTimesContainer = $('#routingTimesContainer');
+            const routingStatus = $('#routingStatus');
+            const addJobsBtn = $('#addJobsBtn');
+            const clearJobsBtn = $('#clearJobsBtn');
+
+            const wsCount = $('#wsCount');
+            const wsStatus = $('#wsStatus');
+            const jobCount = $('#jobCount');
+            const jobStatus = $('#jobStatus');
+
+            const statMakespan = $('#statMakespan');
+            const statUtilization = $('#statUtilization');
+            const statRuntime = $('#statRuntime');
+            const resultBadge = $('#resultBadge');
+            const resultSource = $('#resultSource');
+            const ganttBadge = $('#ganttBadge');
+            const ganttLegend = $('#ganttLegend');
+            const scheduleTableContainer = $('#scheduleTableContainer');
+            const scheduleCount = $('#scheduleCount');
+            const contribContainer = $('#contribContainer');
+            const contribBadge = $('#contribBadge');
+            const contribSource = $('#contribSource');
+
+            const rerunBtn = $('#rerunBtn');
+            const rerunStatus = $('#rerunStatus');
+            const rerunInfo = $('#rerunInfo');
+
+            const toast = $('#toast');
+            let toastTimer = null;
+
+            // ── Helpers ──
+            const escapeAttr = (s) => String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            function showToast(msg, type = '') {
+                toast.textContent = msg;
+                toast.className = 'toast ' + type;
+                clearTimeout(toastTimer);
+                void toast.offsetWidth;
+                toast.classList.add('show');
+                toastTimer = setTimeout(() => toast.classList.remove('show'), 3200);
+            }
+            function setStatus(text, busy = false) {
+                statusText.textContent = text;
+                statusDot.className = 'status-dot' + (busy ? ' busy' : '');
+            }
+
+            // ── DB sync: push workstation declarations to the shared SQLite store ──
+            let wsDbSyncTimer = null;
+
+            function scheduleWsDbSync() {
+                clearTimeout(wsDbSyncTimer);
+                wsDbSyncTimer = setTimeout(pushWorkstationsToDb, 500);
+            }
+
+            async function pushWorkstationsToDb() {
+                try {
+                    const payload = {
+                        workstations: state.workstations.map((name, i) => ({
+                            name: name,
+                            machines: state.machinesPerWs[i] || 1,
+                        })),
+                    };
+                    const res = await fetch('/api/workstations', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                } catch (err) {
+                    console.warn('Workstation DB sync failed:', err);
+                }
+            }
+
+            // Returns { ok: boolean, workstations: [...] }
+            // ok=true  → server responded (authoritative, even if empty)
+            // ok=false → server unreachable (safe to fall back to samples)
+            async function loadWorkstationsFromDb() {
+                try {
+                    const res = await fetch('/api/workstations');
+                    if (!res.ok) return { ok: false, workstations: [] };
+                    const data = await res.json();
+                    return { ok: true, workstations: data.workstations || [] };
+                } catch (err) {
+                    console.warn('Could not load workstations from DB:', err);
+                    return { ok: false, workstations: [] };
+                }
+            }
+
+            // ── Products (from Stock tab via shared DB) ──
+            async function loadProductsIntoSelect() {
+                try {
+                    const res = await fetch('/api/products');
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    const products = data.products || [];
+                    const sel = $('#jobProductSelect');
+                    if (!sel) return;
+
+                    const prev = sel.value;
+                    sel.innerHTML =
+                        '<option value="">— Custom base name —</option>' +
+                        products.map(p =>
+                            `<option value="${escapeAttr(p.name)}">${escapeAttr(p.name)}</option>`
+                        ).join('');
+                    if (prev) sel.value = prev;
+                } catch (err) {
+                    console.warn('Could not load products from DB:', err);
+                }
+            }
+
+            // ── Nav ──
+            function openNav() {
+                hamburger.classList.add('active');
+                navPanel.classList.add('open');
+                navOverlay.classList.add('open');
+                document.body.style.overflow = 'hidden';
+            }
+            function closeNav() {
+                hamburger.classList.remove('active');
+                navPanel.classList.remove('open');
+                navOverlay.classList.remove('open');
+                document.body.style.overflow = '';
+            }
+            hamburger.addEventListener('click', () => {
+                if (navPanel.classList.contains('open')) closeNav(); else openNav();
+            });
+            navClose.addEventListener('click', closeNav);
+            navOverlay.addEventListener('click', closeNav);
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && navPanel.classList.contains('open')) closeNav();
+            });
+
+            // ── Tabs ──
+            const tabBtns = $$('.tab-btn');
+            const tabContents = $$('.tab-content');
+            function switchTab(tabId) {
+                tabBtns.forEach(b => b.classList.remove('active'));
+                document.querySelector(`.tab-btn[data-tab="${tabId}"]`).classList.add('active');
+                tabContents.forEach(c => c.classList.remove('active'));
+                document.getElementById(tabId).classList.add('active');
+                if (tabId === 'tab-results' && state.schedule) {
+                    renderGantt(state.schedule);
+                }
+            }
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', function() { switchTab(this.dataset.tab); });
+            });
+
+            // =========================================================
+            //  WORKSTATION SHEET GRID
+            // =========================================================
+            let wsRows = [];
+
+            function renderWsSheet() {
+                let html = '<table class="sheet"><thead><tr>';
+                html += '<th class="col-num">#</th>';
+                html += '<th><input class="sheet-head-input" value="Workstation" readonly /></th>';
+                html += '<th><input class="sheet-head-input" value="Machines" readonly /></th>';
+                html += '<th class="col-act"></th>';
+                html += '</tr></thead><tbody>';
+
+                if (wsRows.length === 0) {
+                    html += `<tr><td colspan="4" class="sheet-empty">No workstations — click “＋ Row” to add one</td></tr>`;
+                }
+
+                wsRows.forEach((row, ri) => {
+                    html += '<tr>';
+                    html += `<td class="col-num">${ri}</td>`;
+                    html += `<td><input data-wsrow="${ri}" data-wscol="0" value="${escapeAttr(row[0] ?? '')}" placeholder="e.g. Coating" spellcheck="false" /></td>`;
+                    html += `<td><input type="number" min="1" max="20" data-wsrow="${ri}" data-wscol="1" value="${escapeAttr(row[1] ?? '1')}" /></td>`;
+                    html += `<td class="col-act"><button class="row-del" data-wsdel="${ri}" title="Remove">✕</button></td>`;
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                wsGrid.innerHTML = html;
+            }
+
+            wsGrid.addEventListener('input', (e) => {
+                const t = e.target;
+                if (t.dataset.wsrow === undefined) return;
+                const r = +t.dataset.wsrow, c = +t.dataset.wscol;
+                if (wsRows[r]) wsRows[r][c] = t.value;
+            });
+
+            wsGrid.addEventListener('change', (e) => {
+                if (e.target.dataset.wsrow === undefined) return;
+                syncWorkstationsFromRows();
+            });
+
+            wsGrid.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-wsdel]');
+                if (!btn) return;
+                removeWorkstation(+btn.dataset.wsdel);
+            });
+
+            addWsRowBtn.addEventListener('click', () => {
+                wsRows.push(['WS' + wsRows.length, '2']);
+                renderWsSheet();
+                syncWorkstationsFromRows();
+                wsGrid.scrollTop = wsGrid.scrollHeight;
+            });
+
+            clearWsBtn.addEventListener('click', () => {
+                wsRows = [];
+                renderWsSheet();
+                syncWorkstationsFromRows();
+                showToast('Workstation grid cleared.', '');
+            });
+
+            function syncWorkstationsFromRows(opts) {
+                state.workstations  = wsRows.map(r => String(r[0] == null ? '' : r[0]).trim() || '—');
+                state.machinesPerWs = wsRows.map(r => Math.max(1, parseInt(r[1]) || 1));
+                updateWsUI();
+                renderRoutingSelector();
+                if (!(opts && opts.skipDb)) scheduleWsDbSync();
+            }
+
+            function updateWsUI() {
+                const n = state.workstations.length;
+                wsCount.textContent = `${n} station${n === 1 ? '' : 's'}`;
+                if (n === 0) {
+                    wsStatus.className = 'data-status empty';
+                    wsStatus.textContent = 'no data';
+                } else {
+                    wsStatus.className = 'data-status loaded';
+                    wsStatus.textContent = `${n} loaded`;
+                }
+            }
+
+            function removeWorkstation(idx) {
+                wsRows.splice(idx, 1);
+                state.jobs.forEach(job => {
+                    job.routing = job.routing.map(w => {
+                        if (w === idx) return -1;
+                        if (w > idx) return w - 1;
+                        return w;
+                    }).filter(w => w >= 0);
+                });
+                const newP = {};
+                for (const [key, val] of Object.entries(state.processingTimes)) {
+                    const [ws, job] = key.split(',').map(Number);
+                    if (ws === idx) continue;
+                    const newWs = ws > idx ? ws - 1 : ws;
+                    newP[`${newWs},${job}`] = val;
+                }
+                state.processingTimes = newP;
+                state.selectedRouting = state.selectedRouting.map(item => {
+                    if (item.ws === idx) return null;
+                    if (item.ws > idx) return { ...item, ws: item.ws - 1 };
+                    return item;
+                }).filter(Boolean);
+
+                renderWsSheet();
+                syncWorkstationsFromRows();
+                renderJobs();
+                showToast('Workstation removed.', 'warning');
+            }
+
+            // =========================================================
+            //  JOBS
+            // =========================================================
+            function renderJobs() {
+                if (state.jobs.length === 0) {
+                    jobList.innerHTML = '<div class="empty-state" style="padding:16px 10px;"><p style="font-size:12px;">No jobs defined. Add jobs using the form above.</p></div>';
+                    jobCount.textContent = '0 jobs';
+                    jobStatus.className = 'data-status empty';
+                    jobStatus.textContent = 'no data';
+                    return;
+                }
+                let html = '<table><thead><tr><th>Name</th><th>Routing</th><th>Times</th><th></th></tr></thead><tbody>';
+                state.jobs.forEach((job, i) => {
+                    const routeStr = job.routing.map(w =>
+                        `${w}:${state.workstations[w] || `WS${w}`}`
+                    ).join(' → ');
+                    const timesStr = job.routing.map(w => state.processingTimes[`${w},${job.id}`] || 1).join(' · ');
+                    html += `<tr>
+                        <td><strong>${escapeAttr(job.name)}</strong> <span class="text-muted" style="font-size:11px;">(J${job.id})</span></td>
+                        <td style="font-family:'SF Mono',monospace; font-size:11px;">${escapeAttr(routeStr)}</td>
+                        <td style="font-family:'SF Mono',monospace; font-size:11px;">${escapeAttr(timesStr)}</td>
+                        <td><button class="btn btn-sm btn-danger" data-deljob="${i}" style="padding:3px 8px; font-size:11px;">✕</button></td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                jobList.innerHTML = html;
+                jobCount.textContent = `${state.jobs.length} job${state.jobs.length === 1 ? '' : 's'}`;
+                jobStatus.className = 'data-status loaded';
+                jobStatus.textContent = `${state.jobs.length} loaded`;
+
+                jobList.querySelectorAll('[data-deljob]').forEach(btn => {
+                    btn.addEventListener('click', () => removeJob(+btn.dataset.deljob));
+                });
+            }
+
+            function removeJob(idx) {
+                const job = state.jobs[idx];
+                if (!job) return;
+                state.jobs.splice(idx, 1);
+                const newP = {};
+                for (const [key, val] of Object.entries(state.processingTimes)) {
+                    const [ws, jobId] = key.split(',').map(Number);
+                    if (jobId === job.id) continue;
+                    newP[key] = val;
+                }
+                state.processingTimes = newP;
+                renderJobs();
+                showToast(`Removed job ${job.name}`, 'warning');
+            }
+
+            clearJobsBtn.addEventListener('click', () => {
+                state.jobs = [];
+                state.processingTimes = {};
+                renderJobs();
+                showToast('All jobs cleared.', '');
+            });
+
+            // =========================================================
+            //  ROUTING SELECTOR
+            // =========================================================
+            function renderRoutingSelector() {
+                const ws = state.workstations;
+                if (ws.length === 0) {
+                    routingCheckboxes.innerHTML = '<div class="text-muted" style="padding:8px; font-size:12px;">No workstations available. Add workstations first.</div>';
+                    routingTimesContainer.innerHTML = '';
+                    routingStatus.textContent = 'No workstations to select.';
+                    return;
+                }
+
+                let html = '';
+                ws.forEach((name, idx) => {
+                    const checked = state.selectedRouting.some(item => item.ws === idx);
+                    html += `
+                        <div class="routing-checkbox-item ${checked ? 'checked' : ''}" data-ws="${idx}">
+                            <span class="ws-index">${idx}</span>
+                            <input type="checkbox" data-ws="${idx}" ${checked ? 'checked' : ''} />
+                            <span class="ws-name">${escapeAttr(name)}</span>
+                        </div>
+                    `;
+                });
+                routingCheckboxes.innerHTML = html;
+
+                routingCheckboxes.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    cb.addEventListener('change', function() {
+                        const wsIdx = parseInt(this.dataset.ws);
+                        if (this.checked) {
+                            if (!state.selectedRouting.some(item => item.ws === wsIdx)) {
+                                state.selectedRouting.push({ ws: wsIdx, time: 1 });
+                            }
+                        } else {
+                            state.selectedRouting = state.selectedRouting.filter(item => item.ws !== wsIdx);
+                        }
+                        renderRoutingSelector();
+                        updateRoutingTimes();
+                        updateRoutingStatus();
+                    });
+                });
+
+                updateRoutingTimes();
+                updateRoutingStatus();
+            }
+
+            function updateRoutingTimes() {
+                const container = routingTimesContainer;
+                if (state.selectedRouting.length === 0) {
+                    container.innerHTML = '<div class="text-muted" style="font-size:12px;">No workstations selected.</div>';
+                    return;
+                }
+                let html = '<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:4px;">';
+                state.selectedRouting.forEach((item, order) => {
+                    html += `
+                        <div class="routing-time-input">
+                            <span class="routing-order-label">#${order + 1}</span>
+                            <label>WS${item.ws}:</label>
+                            <input type="number" min="1" step="1" value="${item.time}" data-rttime="${item.ws}" />
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                container.innerHTML = html;
+
+                container.querySelectorAll('[data-rttime]').forEach(input => {
+                    input.addEventListener('change', function() {
+                        const wsIdx = parseInt(this.dataset.rttime);
+                        const val = Math.max(1, parseFloat(this.value) || 1);
+                        const item = state.selectedRouting.find(it => it.ws === wsIdx);
+                        if (item) item.time = val;
+                        updateRoutingStatus();
+                    });
+                });
+            }
+
+            function updateRoutingStatus() {
+                const ws = state.workstations;
+                if (ws.length === 0) {
+                    routingStatus.textContent = 'Add workstations first.';
+                    return;
+                }
+                if (state.selectedRouting.length === 0) {
+                    routingStatus.textContent = 'Click on workstation checkboxes in the order you want the routing.';
+                } else {
+                    const routeStr = state.selectedRouting.map(item =>
+                        `${item.ws}:${state.workstations[item.ws]} (t=${item.time})`
+                    ).join(' → ');
+                    routingStatus.textContent = `Current route: ${routeStr}`;
+                }
+            }
+
+            // =========================================================
+            //  ADD JOBS
+            // =========================================================
+            addJobsBtn.addEventListener('click', function() {
+                const baseName = jobBaseName.value.trim() || 'Job';
+                const count = Math.max(1, parseInt(jobCountCreate.value) || 1);
+
+                if (state.selectedRouting.length === 0) {
+                    showToast('Please select at least one workstation for the routing.', 'error');
+                    return;
+                }
+
+                const routing = state.selectedRouting.map(item => item.ws);
+                const times = state.selectedRouting.map(item => item.time || 1);
+
+                for (const w of routing) {
+                    if (w < 0 || w >= state.workstations.length) {
+                        showToast(`Invalid workstation index ${w}.`, 'error');
+                        return;
+                    }
+                }
+
+                let maxId = state.jobs.reduce((max, j) => Math.max(max, j.id), -1);
+                const startCount = state.jobs.length;
+                for (let i = 0; i < count; i++) {
+                    const jobId = maxId + 1 + i;
+                    const name = `${baseName}-${startCount + i + 1}`;
+                    state.jobs.push({ id: jobId, name, routing: [...routing] });
+                    routing.forEach((ws, idx) => {
+                        const dur = times[idx] || 1;
+                        state.processingTimes[`${ws},${jobId}`] = dur;
+                    });
+                }
+
+                renderJobs();
+                showToast(`Added ${count} job(s) with base name "${baseName}".`, 'success');
+            });
+
+            // =========================================================
+            //  PAYLOAD
+            // =========================================================
+            function buildPayload() {
+                const jobRoutings = state.jobs.map(j => j.routing);
+                const pTimes = {};
+                for (const [key, val] of Object.entries(state.processingTimes)) {
+                    pTimes[key] = val;
+                }
+                const payload = {
+                    workstations: state.workstations,
+                    machines_per_ws: state.machinesPerWs,
+                    job_routings: jobRoutings,
+                    processing_times: pTimes,
+                    generations: parseInt(genCount.value) || 150,
+                    pop_size: parseInt(popSize.value) || 200,
+                };
+                const tl = parseInt(timeLimitInput.value);
+                if (!isNaN(tl) && tl > 0) payload.time_limit = tl;
+                return payload;
+            }
+
+            // =========================================================
+            //  RUN SCHEDULING
+            // =========================================================
+            async function runScheduling(buttonEl, isRerun = false) {
+                if (state.isRunning) return;
+                if (state.jobs.length === 0) { showToast('Please define at least one job.', 'error'); return; }
+                if (state.workstations.length === 0) { showToast('Please define at least one workstation.', 'error'); return; }
+
+                for (const job of state.jobs) {
+                    for (const w of job.routing) {
+                        if (w < 0 || w >= state.workstations.length) {
+                            showToast(`Job ${job.name} has invalid workstation index: ${w}`, 'error');
+                            return;
+                        }
+                    }
+                }
+
+                state.isRunning = true;
+                runBtn.disabled = true;
+                rerunBtn.disabled = true;
+                runBtn.innerHTML = '<span class="loading-spinner"></span> Solving...';
+                rerunBtn.innerHTML = '<span class="loading-spinner"></span> Re‑running...';
+                runStatus.textContent = 'Running...';
+                rerunStatus.textContent = 'Running...';
+                rerunStatus.className = 'run-status-sm busy';
+                rerunInfo.textContent = '⏳ Solver in progress…';
+                setStatus('Solving FJSP...', true);
+                solverStatusText.textContent = '⏳ Running genetic algorithm...';
+
+                const payload = buildPayload();
+                solverStatusText.textContent = '⏳ Running genetic algorithm...' + (payload.time_limit ? ` (time limit: ${payload.time_limit}s)` : '');
+
+                try {
+                    const response = await fetch('/api/schedule', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.error || `HTTP ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    state.schedule = result;
+                    renderResults(result);
+                    showToast(`✅ Scheduling complete! Makespan: ${result.makespan}`, 'success');
+                    setStatus('Done', false);
+                    solverStatusText.textContent = `✅ Solved in ${result.runtime?.toFixed(2) || '?'}s · Makespan: ${result.makespan}`;
+                    rerunStatus.textContent = 'Done';
+                    rerunStatus.className = 'run-status-sm done';
+                    rerunInfo.textContent = `✅ Makespan ${result.makespan} · ${result.operations?.length || 0} ops`;
+                    if (!isRerun) switchTab('tab-results');
+
+                } catch (err) {
+                    console.error('Scheduling error:', err);
+                    showToast('❌ ' + err.message, 'error');
+                    setStatus('Error', false);
+                    solverStatusText.textContent = '❌ ' + err.message;
+                    rerunStatus.textContent = 'Error';
+                    rerunStatus.className = 'run-status-sm';
+                    rerunInfo.textContent = '❌ ' + err.message;
+
+                    if (!state.schedule) {
+                        const mock = generateMockSchedule(payload);
+                        state.schedule = mock;
+                        renderResults(mock);
+                        showToast('⚠️ Using demo schedule (backend unavailable)', 'warning');
+                        solverStatusText.textContent = '⚠️ Demo mode – backend not reachable';
+                    }
+                } finally {
+                    state.isRunning = false;
+                    runBtn.disabled = false;
+                    rerunBtn.disabled = false;
+                    runBtn.innerHTML = '🚀 Run Scheduling';
+                    rerunBtn.innerHTML = '🔄 Re‑run';
+                    runStatus.textContent = 'Ready';
+                }
+            }
+
+            runBtn.addEventListener('click', function() { runScheduling(this, false); });
+            rerunBtn.addEventListener('click', function() { runScheduling(this, true); });
+
+            function generateMockSchedule(payload) {
+                const { job_routings, processing_times, workstations, machines_per_ws } = payload;
+                const ops = [];
+                const machineAvail = {};
+                for (let ws = 0; ws < workstations.length; ws++) {
+                    for (let m = 0; m < (machines_per_ws[ws] || 1); m++) {
+                        machineAvail[`${ws},${m}`] = 0;
+                    }
+                }
+                const jobEnd = {};
+
+                job_routings.forEach((routing, jobIdx) => {
+                    let jobTime = 0;
+                    routing.forEach((ws, opIdx) => {
+                        const key = `${ws},${jobIdx}`;
+                        const dur = processing_times[key] || 1;
+                        const m = Math.floor(Math.random() * (machines_per_ws[ws] || 1));
+                        const key2 = `${ws},${m}`;
+                        const start = Math.max(machineAvail[key2] || 0, jobTime);
+                        const end = start + dur;
+                        ops.push({
+                            workstation: ws,
+                            machine: m,
+                            start: start,
+                            end: end,
+                            job: jobIdx,
+                            op_index: opIdx,
+                            duration: dur,
+                        });
+                        machineAvail[key2] = end;
+                        jobTime = end;
+                        jobEnd[jobIdx] = end;
+                    });
+                });
+
+                const makespan = Math.max(...Object.values(jobEnd), 0);
+                return {
+                    makespan,
+                    operations: ops,
+                    runtime: 0.42,
+                    utilization: 0.73,
+                    workstations: workstations,
+                    machines_per_ws: machines_per_ws,
+                };
+            }
+
+            // =========================================================
+            //  RENDER RESULTS
+            // =========================================================
+            function renderResults(result) {
+                const { makespan, operations, runtime, utilization } = result;
+                statMakespan.textContent = makespan;
+                statUtilization.textContent = utilization ? (utilization * 100).toFixed(1) + '%' : '—';
+                statRuntime.textContent = runtime ? runtime.toFixed(2) : '—';
+                resultBadge.textContent = `Makespan ${makespan}`;
+                resultSource.textContent = `Solved · ${operations?.length || 0} operations`;
+
+                if (operations && operations.length > 0) {
+                    renderGantt(result);
+                    renderContrib(result);
+                    renderScheduleTable(operations);
+                } else {
+                    ganttBadge.textContent = 'No operations';
+                    document.getElementById('ganttChart').innerHTML =
+                        '<div class="empty-state"><span class="icon">📊</span><p>No schedule data to display.</p></div>';
+                    scheduleTableContainer.innerHTML =
+                        '<div class="empty-state"><span class="icon">📭</span><p>No operations in schedule.</p></div>';
+                    renderContrib(result);
+                }
+            }
+
+            function renderGantt(result) {
+                const { operations, workstations, machines_per_ws } = result;
+                if (!operations || operations.length === 0) {
+                    document.getElementById('ganttChart').innerHTML =
+                        '<div class="empty-state"><span class="icon">📊</span><p>No operations to display.</p></div>';
+                    return;
+                }
+
+                const machineLabels = [];
+                const machineMap = {};
+                let idx = 0;
+                for (let ws = 0; ws < workstations.length; ws++) {
+                    for (let m = 0; m < (machines_per_ws[ws] || 1); m++) {
+                        const label = `${workstations[ws]} · M${m + 1}`;
+                        machineLabels.push(label);
+                        machineMap[`${ws},${m}`] = idx;
+                        idx++;
+                    }
+                }
+
+                const jobColors = {};
+                const jobs = [...new Set(operations.map(op => op.job))];
+                const palette = [
+                    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+                    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+                    '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5',
+                    '#c49c94', '#f7b6d2', '#c7c7c7', '#dbdb8d', '#9edae5'
+                ];
+                jobs.forEach((j, i) => {
+                    jobColors[j] = palette[i % palette.length];
+                });
+
+                const traces = [];
+                const legendItems = [];
+
+                for (const op of operations) {
+                    const ws = op.workstation;
+                    const m = op.machine;
+                    const key = `${ws},${m}`;
+                    const yIdx = machineMap[key];
+                    if (yIdx === undefined) continue;
+
+                    const jobId = op.job;
+                    const color = jobColors[jobId] || '#888';
+
+                    const jobObj = state.jobs.find(j => j.id === jobId);
+                    const jobLabel = jobObj ? jobObj.name : `J${jobId}`;
+
+                    traces.push({
+                        x: [op.start, op.end],
+                        y: [yIdx, yIdx],
+                        mode: 'lines',
+                        line: { color: color, width: 22 },
+                        name: jobLabel,
+                        showlegend: false,
+                        hoverinfo: 'text',
+                        text: [
+                            `${jobLabel} · Op ${op.op_index}<br>WS ${ws} · M${m}<br>${op.start} → ${op.end} (dur ${op.duration})`,
+                            ''
+                        ],
+                        hoverlabel: { bgcolor: color, font: { color: '#fff' } },
+                    });
+
+                    if (!legendItems.find(item => item.job === jobId)) {
+                        legendItems.push({ job: jobId, label: jobLabel, color });
+                    }
+                }
+
+                const layout = {
+                    title: '',
+                    paper_bgcolor: 'transparent',
+                    plot_bgcolor: 'transparent',
+                    font: { color: '#1e1a16', family: 'Inter' },
+                    margin: { l: 140, r: 30, t: 10, b: 60 },
+                    xaxis: {
+                        title: 'Time (slots)',
+                        gridcolor: '#e8ddd0',
+                        zeroline: false,
+                        tickfont: { size: 10 },
+                    },
+                    yaxis: {
+                        title: '',
+                        tickmode: 'array',
+                        tickvals: machineLabels.map((_, i) => i),
+                        ticktext: machineLabels,
+                        gridcolor: '#e8ddd0',
+                        tickfont: { size: 9 },
+                        automargin: true,
+                    },
+                    hovermode: 'closest',
+                    showlegend: false,
+                    bargap: 0.1,
+                };
+
+                const chartDiv = document.getElementById('ganttChart');
+                Plotly.newPlot(chartDiv, traces, layout, { responsive: true });
+
+                ganttLegend.innerHTML = '';
+                legendItems.forEach(item => {
+                    const el = document.createElement('span');
+                    el.className = 'legend-item';
+                    el.innerHTML = `<span class="legend-color" style="background:${item.color};"></span> ${item.label}`;
+                    ganttLegend.appendChild(el);
+                });
+                ganttBadge.textContent = `${operations.length} ops · ${machineLabels.length} machines`;
+            }
+
+            function renderContrib(result) {
+                const { operations, workstations, makespan } = result;
+                if (!operations || operations.length === 0 || !makespan) {
+                    contribContainer.innerHTML =
+                        '<div class="empty-state"><span class="icon">📊</span><p>No workstation contribution to display.</p></div>';
+                    contribBadge.textContent = '—';
+                    contribSource.textContent = 'Awaiting run';
+                    return;
+                }
+
+                const busy = {};
+                workstations.forEach((_, i) => { busy[i] = 0; });
+                operations.forEach(op => {
+                    busy[op.workstation] = (busy[op.workstation] || 0) + (op.duration || (op.end - op.start));
+                });
+
+                const rows = workstations.map((name, i) => ({
+                    idx: i,
+                    name: name,
+                    busy: busy[i] || 0,
+                })).sort((a, b) => b.busy - a.busy);
+
+                const maxBusy = Math.max(...rows.map(r => r.busy), 1);
+                const totalBusy = rows.reduce((s, r) => s + r.busy, 0) || 1;
+                const top = rows[0];
+                const topPct = (top.busy / totalBusy * 100).toFixed(1);
+
+                let html = '<div class="contrib-wrap">';
+                html += `
+                    <div class="contrib-summary">
+                        <span>Most loaded:</span>
+                        <span class="contrib-summary-route">WS${top.idx} · ${escapeAttr(top.name)}</span>
+                        <span>— ${top.busy} time units of ${totalBusy} total (<strong>${topPct}%</strong> of work).</span>
+                    </div>`;
+
+                rows.forEach((r, i) => {
+                    const barPct = (r.busy / maxBusy * 100).toFixed(1);
+                    const sharePct = (r.busy / totalBusy * 100).toFixed(1);
+                    const rankCls = i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : '';
+                    const delay = Math.min(i * 40, 500);
+                    const label = `WS${r.idx} · ${r.name} · ${r.busy} time units`;
+
+                    html += `
+                        <div class="contrib-row ${rankCls}">
+                            <div class="contrib-rank">#${i + 1}</div>
+                            <div class="contrib-body">
+                                <div class="contrib-name" title="${escapeAttr(label)}">${escapeAttr(label)}</div>
+                                <div class="contrib-bar-track">
+                                    <div class="contrib-bar-fill"
+                                         style="--bar-w:${barPct}%; animation-delay:${delay}ms;"></div>
+                                </div>
+                            </div>
+                            <div class="contrib-value">
+                                ${r.busy}
+                                <span class="contrib-pct">${sharePct}%</span>
+                            </div>
+                        </div>`;
+                });
+
+                html += '</div>';
+                contribContainer.innerHTML = html;
+
+                contribBadge.textContent = `${rows.length} workstations`;
+                contribSource.textContent = `By load · ${totalBusy} total`;
+            }
+
+            function renderScheduleTable(operations) {
+                if (!operations || operations.length === 0) {
+                    scheduleTableContainer.innerHTML =
+                        '<div class="empty-state"><span class="icon">📭</span><p>No operations in schedule.</p></div>';
+                    scheduleCount.textContent = '0 operations';
+                    return;
+                }
+
+                const sorted = [...operations].sort((a, b) => a.start - b.start || a.job - b.job);
+                let html = `<table>
+                    <thead><tr>
+                        <th>Job</th><th>Op</th><th>Workstation</th><th>Machine</th>
+                        <th>Start</th><th>End</th><th>Duration</th>
+                    </tr></thead><tbody>`;
+                sorted.forEach(op => {
+                    const jobObj = state.jobs.find(j => j.id === op.job);
+                    const jobLabel = jobObj ? jobObj.name : `J${op.job}`;
+                    html += `<tr>
+                        <td><strong>${escapeAttr(jobLabel)}</strong></td>
+                        <td>${op.op_index}</td>
+                        <td>${op.workstation}: ${escapeAttr(state.workstations[op.workstation] || '')}</td>
+                        <td>M${op.machine}</td>
+                        <td class="mono">${op.start}</td>
+                        <td class="mono">${op.end}</td>
+                        <td class="mono">${op.duration || (op.end - op.start)}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                scheduleTableContainer.innerHTML = html;
+                scheduleCount.textContent = `${operations.length} operations`;
+            }
+
+            // ── Resize ──
+            window.addEventListener('resize', function() {
+                const chart = document.getElementById('ganttChart');
+                if (chart && chart._fullLayout) Plotly.Plots.resize(chart);
+            });
+
+            // ── Product dropdown -> base name mirror ──
+            document.addEventListener('change', (e) => {
+                if (e.target && e.target.id === 'jobProductSelect') {
+                    const val = e.target.value;
+                    if (val) jobBaseName.value = val;
+                }
+            });
+
+            // =========================================================
+            //  INIT
+            // =========================================================
+            async function init() {
+                // 1. Try to restore workstations declared earlier (from the shared DB)
+                const { ok, workstations } = await loadWorkstationsFromDb();
+
+                if (ok) {
+                    // Server responded — respect whatever it says, including "empty"
+                    wsRows = workstations.map(w => [w.name, String(w.machines)]);
+                } else {
+                    // Server unreachable — use samples as a fallback so the page is usable
+                    wsRows = [
+                        ['Cutting', '2'],
+                        ['Welding', '2'],
+                        ['Coating', '1'],
+                        ['Assembly', '3'],
+                    ];
+                }
+
+                renderWsSheet();
+                // Only push samples to the DB when we couldn't reach the server.
+                // If the server told us the DB is empty, do NOT re-seed it.
+                syncWorkstationsFromRows({ skipDb: ok });
+
+                // 2. Populate the product dropdown from the shared DB
+                await loadProductsIntoSelect();
+
+                // 3. Default routing — every loaded workstation, time = 2
+                state.selectedRouting = state.workstations.map((_, i) => ({ ws: i, time: 2 }));
+                renderRoutingSelector();
+
+                // 4. Sample jobs that follow whatever workstations are loaded
+                state.jobs = [];
+                state.processingTimes = {};
+                const nWs = state.workstations.length;
+                for (let i = 0; i < 3; i++) {
+                    const routing = [];
+                    for (let w = 0; w < nWs; w++) routing.push(w);
+                    const jobId = i;
+                    state.jobs.push({ id: jobId, name: `Job-${i + 1}`, routing: [...routing] });
+                    routing.forEach(ws => {
+                        state.processingTimes[`${ws},${jobId}`] = 2;
+                    });
+                }
+                renderJobs();
+
+                setStatus('Ready', false);
+                solverStatusText.textContent = 'Add workstations, then click workstations in order to build routing, then add jobs.';
+                rerunStatus.textContent = 'Ready';
+                rerunStatus.className = 'run-status-sm';
+                rerunInfo.textContent = 'Click to re‑run with current config';
+
+                document.getElementById('ganttChart').innerHTML =
+                    '<div class="empty-state"><span class="icon">📊</span><p>Run the scheduler to see the Gantt chart.</p></div>';
+                scheduleTableContainer.innerHTML =
+                    '<div class="empty-state"><span class="icon">📭</span><p>Run the scheduler to see the detailed schedule.</p></div>';
+                contribContainer.innerHTML =
+                    '<div class="empty-state"><span class="icon">📊</span><p>Run the scheduler to see how each workstation contributes to the makespan.</p></div>';
+                contribBadge.textContent = '—';
+                contribSource.textContent = 'Awaiting run';
+            }
+
+            init();
+
+            // If the user switches away and comes back, re-read the DB so the grid
+            // stays in sync with changes made on the dashboard.
+            document.addEventListener('visibilitychange', async () => {
+                if (document.visibilityState !== 'visible') return;
+                if (wsGrid.contains(document.activeElement)) return; // don't clobber active typing
+
+                const { ok, workstations } = await loadWorkstationsFromDb();
+                if (ok) {
+                    const dbNames  = workstations.map(w => w.name);
+                    const localNames = state.workstations;
+                    const differs =
+                        dbNames.length !== localNames.length ||
+                        dbNames.some((n, i) => n !== localNames[i]) ||
+                        workstations.some((w, i) => (state.machinesPerWs[i] || 1) !== w.machines);
+
+                    if (differs) {
+                        wsRows = workstations.map(w => [w.name, String(w.machines)]);
+                        renderWsSheet();
+                        state.workstations  = wsRows.map(r => String(r[0] || '').trim() || '—');
+                        state.machinesPerWs = wsRows.map(r => Math.max(1, parseInt(r[1]) || 1));
+                        updateWsUI();
+                        renderRoutingSelector();
+                        showToast('Workstations refreshed from the dashboard.', '');
+                    }
+                }
+
+                // Refresh the product dropdown too — the user may have added a
+                // new product on the Home → Stock tab in another tab.
+                await loadProductsIntoSelect();
+            });
+
+        })();
+    </script>
+</body>
+</html>
